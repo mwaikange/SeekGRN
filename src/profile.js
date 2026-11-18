@@ -1,7 +1,7 @@
 export const personal = [
   ['surname','Surname'], ['maiden','Maiden name'], ['names','First names'], ['identity','Namibian identity number'],
   ['birth','Date of birth','date'], ['passport','Passport number'], ['citizenship','Citizenship'], ['permit','Work permit number'],
-  ['gender','Gender',['Male','Female']], ['marital','Marital status',['Married','Single','Other']],
+  ['gender','Gender',['Male','Female']], ['marital','Marital status',['Married','Single']],
   ['postal','Postal address'], ['residential','Residential address'], ['home','Home telephone','tel'], ['mobile','Mobile number','tel'],
   ['work','Work telephone','tel'], ['fax','Fax'], ['email','Email','email'], ['faxmail','Fax2mail'], ['alternate','Alternative contact name'],
   ['alternatePhone','Alternative contact telephone','tel'], ['available','When can you assume duty?']
@@ -34,11 +34,15 @@ function missingFields(profile, keys) {
 }
 export function problems(p) {
   const warnings = [];
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(p.birth||'')||new Date(p.birth)>new Date())warnings.push('Enter a valid date of birth in the past.');
+  if(p.tertiary.length>3)warnings.push('The official template has space for three tertiary qualifications. Keep the three most relevant entries.');
+  if(p.languages.length>6||!p.languages.length)warnings.push('Enter one to six languages.');
   if (missingFields(p,['surname','names','birth','citizenship','gender','marital','postal','residential','mobile','email','alternate','alternatePhone','available']) || !(p.identity || p.passport)) warnings.push('Complete your identity, contact and availability details.');
   if (!p.employmentType || (p.employmentType === 'Yes' && missingFields(p,employment.map(([key])=>key)))) warnings.push('Complete your current Public Service employment details.');
   if (p.languages.some(row => missingFields(row,['language','speak','read','write']))) warnings.push('Select speaking, reading and writing levels for each language.');
   const credentials = [p.school,...p.tertiary].filter(row => Object.values(row).some(Boolean));
   if (credentials.some(row => missingFields(row,['institution','certificate','subjects','obtained']) || /see (?:the )?(?:attach|cv)/i.test(row.subjects))) warnings.push('Enter the institution, qualification, actual subjects and award date for each qualification.');
+  if(credentials.some(row=>row.majors&&row.majors.split(',').map(s=>s.trim()).filter(Boolean).some(m=>!String(row.subjects||'').toLowerCase().includes(m.toLowerCase()))))warnings.push('Major subjects must be included in your subjects list.');
   if (p.experience.some(row => missingFields(row,['employer','post','from','reason']))) warnings.push('Complete each employment history entry or remove its empty row.');
   if (!(Number(p.height)>0) || !(Number(p.mass)>0) || [...health,...disclosures].some(([key]) => !p[key] || (p[key]==='Yes' && !String(p[key+'Details'] ?? '').trim()))) warnings.push('Answer the health and declaration questions and explain every Yes answer.');
   return warnings;

@@ -1,19 +1,29 @@
-const db = new Promise((resolve,reject)=>{
-  const request=indexedDB.open('seekgrnjobs',1);
-  request.onupgradeneeded=()=>request.result.createObjectStore('data');
-  request.onsuccess=()=>resolve(request.result);
-  request.onerror=()=>reject(request.error);
-});
-async function operate(mode,callback) {
-  const database=await db;
-  return new Promise((resolve,reject)=>{
-    const transaction=database.transaction('data',mode);
-    const request=callback(transaction.objectStore('data'));
-    transaction.oncomplete=()=>resolve(request.result);
-    transaction.onabort=()=>reject(transaction.error ?? request.error);
-    transaction.onerror=()=>reject(transaction.error ?? request.error);
-  });
+import {supabase,user,isAdmin,encode,decode} from './backend.js';
+export async function get(key) {
+ if(key==='circular') {
+  const {data,error}=await supabase.from('circulars').select('*').eq('id',1).maybeSingle();
+  if(error)throw error;
+  if(!data)return {title:'No current circular',jobs:[],closes:'2000-01-01',advertised:'2000-01-01',archived:true};
+  return {...data,pdf:data.pdf?decode(JSON.parse(data.pdf)):null};
+ }
+ if(!user)return undefined;
+ const {data,error}=await supabase.from('applicant_data').select('value').eq('user_id',user.id).eq('key',key).maybeSingle();
+ if(error)throw error;
+ return data?decode(data.value):undefined;
 }
-export const get = key => operate('readonly',store=>store.get(key));
-export const put = (key,value) => operate('readwrite',store=>store.put(value,key));
-export const remove = key => operate('readwrite',store=>store.delete(key));
+export async function put(key,value) {
+ if(key==='circular') {
+  if(!isAdmin)throw new Error('Administrator access is required.');
+  const {title,advertised,closes,jobs,pdf}=value;
+  const {error}=await supabase.from('circulars').upsert({id:1,title,advertised,closes,jobs,pdf:pdf?JSON.stringify(await encode(pdf)):null,updated_at:new Date().toISOString()});
+  if(error)throw error; return;
+ }
+ if(!user)throw new Error('Sign in to save your profile and documents.');
+ const {error}=await supabase.from('applicant_data').upsert({user_id:user.id,key,value:await encode(value),updated_at:new Date().toISOString()});
+ if(error)throw error;
+}
+export async function remove(key) {
+ if(!user)throw new Error('Sign in first.');
+ const {error}=await supabase.from('applicant_data').delete().eq('user_id',user.id).eq('key',key);
+ if(error)throw error;
+}

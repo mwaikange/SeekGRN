@@ -3,36 +3,39 @@ import { icon } from './icons.js';
 import { seed, displayDate, expired, retired } from './circular.js';
 import * as fields from './profile.js';
 import { get, put, remove } from './storage.js';
+import {connect,supabase,user,isAdmin} from './backend.js';
+import {openAccount} from './auth.js';
 
 async function initialize() {
+await connect();
 const root = document.querySelector('#app');
 const blank = fields.blankProfile();
-const nav = [['browse','grid','Browse vacancies'],['profile','user','My profile'],['documents','file','My documents']];
+const nav = [['browse','grid','Browse'],['profile','user','Profile'],['documents','file','My Documents']];
 const state = {
   view: 'browse', section: 'personal', profile: {...blank,...await get('profile')},
   documents: await get('documents') ?? [], circular: await get('circular') ?? seed,
-  admin: false, query: '', org: '', station: '', selected: '', notice: '', jobStatus: '', pending: null
+  admin: isAdmin, query: '', org: '', station: '', selected: '', notice: '', jobStatus: '', pending: null
 };
 const circularUrl = new URL('/circular.pdf', location.origin);
 const escape = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const action = (label, name, symbol, classes='button secondary', props='') =>
   '<button type="button" class="'+classes+'" data-action="'+name+'" '+props+'>'+(symbol?icon(symbol):'')+escape(label)+'</button>';
-const navLink = ([id,symbol,label]) => '<a href="#'+id+'" class="nav-link '+(state.view===id?'active':'')+'" '+(state.view===id?'aria-current="page"':'')+'>'+icon(symbol)+escape(label)+'</a>';
+const navLink = ([id,symbol,label]) => '<a href="#'+id+'" class="nav-link '+(state.view===id?'active':'')+'" '+(state.view===id?'aria-current="page"':'')+'>'+icon(symbol)+'<span>'+escape(label)+'</span></a>';
 const prepared = id => state.documents.find(bundle=>bundle.jobId===id);
 const confirmed = () => state.profile.confirmed && !fields.problems(state.profile).length;
 const status = message => {state.notice=message; const el=root.querySelector('#notice'); if(el){el.textContent=message;el.hidden=!message;}};
 function retireCircular() {
   if (!retired(state.circular) || state.circular.archived) return;
   state.circular = {...state.circular,jobs:[],pdf:null,archived:true};
-  if (state.circular !== seed) void put('circular',state.circular).catch(()=>{});
+  
 }
 retireCircular();
 
 function shell(content) {
   return '<a class="skip" href="#main">Skip to content</a><header class="mast"><div class="wrap mast-inner">'+
     '<a class="brand" href="#browse"><span class="brand-icon">'+icon('briefcase',23)+'</span><span>Seek<span class="brand-grn">GRN</span>Jobs<small>NAMIBIA PUBLIC SERVICE VACANCIES</small></span></a>'+
-    '<nav aria-label="Main navigation">'+nav.map(navLink).join('')+(state.admin?navLink(['admin','upload','Upload PSM']):'')+'</nav>'+
-    action(state.admin?'Exit admin preview':'Admin preview','admin-mode','shield','button quiet mast-action')+'</div></header>'+
+    '<nav class="app-nav" aria-label="Main navigation">'+nav.map(navLink).join('')+(state.admin?navLink(['admin','upload','Upload PSM']):'')+'</nav>'+
+    action(user?'My account':'Sign in','account','user','button quiet mast-action')+'</div></header>'+
     '<main id="main">'+content+'<p id="notice" role="status" class="notice wrap" '+(state.notice?'':'hidden')+'>'+escape(state.notice)+'</p></main>'+
     '<footer class="wrap footer"><a class="footer-brand" href="#browse">SeekGRNJobs</a><p>Independent application preparation tool for Namibia’s Public Service.</p></footer>';
 }
@@ -55,7 +58,7 @@ function browse() {
     '<div class="filters"><label class="search">'+icon('search')+'<input aria-label="Search vacancies" placeholder="Search by job title or ministry" value="'+escape(state.query)+'" data-filter="query"></label>'+filterOptions('org','All ministries')+filterOptions('station','All duty stations')+'</div>'+
     '<div id="jobs" class="job-list"></div></section><aside class="guide"><div class="guide-icon">'+icon('user',23)+'</div><h2>Your applicant profile</h2><p>Enter your details once and reuse them for each set of government application forms.</p>'+
     '<a class="button primary" href="#profile">'+(confirmed()?'View profile':'Set up my profile')+icon('arrow',16)+'</a><hr>'+
-    '<div class="guide-note">'+icon('shield',19)+'<p>Your documents stay in this browser. Submit your signed forms and supporting documents via the Human Resources office listed in the circular.</p></div></aside></div></div>';
+    '<div class="guide-note">'+icon('shield',19)+'<p>Your profile and documents are saved privately to your account. Submit your signed forms and supporting documents via the Human Resources office listed in the circular.</p></div></aside></div></div>';
 }
 function renderJobs() {
   const list=root.querySelector('#jobs');
@@ -101,13 +104,13 @@ function profileContent() {
   const p=state.profile;
   switch(state.section) {
     case 'employment': return fieldGrid([['employmentType','Are you currently employed in the Public Service?',true]])+(p.employmentType==='Yes'?fieldGrid(fields.employment):'');
-    case 'qualifications': return '<h3>Highest school qualification</h3>'+fieldGrid(fields.qualifications,p.school,'school')+'<h3>Universities, colleges and other institutions</h3>'+repeaters('tertiary',fields.qualifications,'Qualification',8)+
+    case 'qualifications': return '<h3>Highest school qualification</h3>'+fieldGrid(fields.qualifications,p.school,'school')+'<h3>Universities, colleges and other institutions</h3>'+repeaters('tertiary',fields.qualifications,'Qualification',3)+
       '<h3>Further study and registration</h3>'+fieldGrid(fields.otherQualifications)+'<h3>Language proficiency</h3>'+repeaters('languages',fields.languages,'Language',6,true);
     case 'experience': return '<p class="subtle">Enter the most relevant roles. The template provides four labelled rows and space for a fifth entry.</p>'+repeaters('experience',fields.experience,'Role',5);
     case 'health': return '<p class="subtle">Answer each question. For a Yes answer, describe the condition, severity, date and duration as applicable.</p>'+fieldGrid([['height','Height (cm)','number'],['mass','Body mass (kg)','number']])+fields.health.map(question).join('');
     case 'review': {
       const warnings=fields.problems(p);
-      return fields.disclosures.map(question).join('')+'<div class="confirm-box"><h3>Confirm your profile</h3><p>Review the details you entered. Sign the application and health declaration when you prepare each pair of forms.</p>'+
+      return fields.disclosures.map(question).join('')+'<div class="signature-box"><h3>Signature (optional)</h3><p>Upload your own signature to place it on both declarations, or skip and sign the printed forms.</p><label class="button secondary file-picker">Upload signature<input type="file" data-upload="signature" accept="image/png,image/jpeg"></label>'+(p.signature?'<img alt="Your signature" src="'+escape(p.signature)+'" style="max-width:220px;max-height:80px;display:block">'+action('Remove signature','remove-signature',null,'button quiet'):'')+'</div>'+ '<div class="confirm-box"><h3>Confirm your profile</h3><p>Review the details you entered. Sign the application and health declaration when you prepare each pair of forms.</p>'+
         (warnings.length?'<ul>'+warnings.map(w=>'<li>'+escape(w)+'</li>').join('')+'</ul>':'')+
         action(p.confirmed?'Profile confirmed':'Confirm profile','confirm','check','button primary',p.confirmed?'disabled':'')+'</div>';
     }
@@ -115,13 +118,15 @@ function profileContent() {
   }
 }
 function profile() {
+  if(!user)return signInPrompt();
   return '<section class="wrap">'+sectionHeading('APPLICANT PROFILE','My profile','Save your details for future application forms.')+
     '<div class="page-grid"><aside class="panel side-steps"><div class="profile-state">'+icon(confirmed()?'check':'user')+(confirmed()?'Confirmed profile':'Profile draft')+'</div>'+
     fields.sections.map(([id,label])=>action(label,'profile-section',null,state.section===id?'step active':'step','data-id="'+id+'"')).join('')+
     action('Clear profile and documents','clear','close','button quiet clear')+'</aside><div class="panel form-panel"><h2>'+fields.sections.find(([id])=>id===state.section)[1]+'</h2>'+profileContent()+
-    '<div class="form-footer"><span>'+icon('shield',16)+' Stored in this browser</span>'+action('Save and continue','save','arrow','button primary')+'</div></div></div></section>';
+    '<div class="form-footer"><span>'+icon('shield',16)+' Saved to your account</span>'+action('Save and continue','save','arrow','button primary')+'</div></div></div></section>';
 }
 function documents() {
+  if(!user)return signInPrompt();
   return '<section class="wrap">'+sectionHeading('APPLICATION PACKS','My documents','View, download or share the forms you prepared for each vacancy.')+
     (state.documents.length?'<div class="document-list">'+state.documents.map(bundle=>'<article class="panel document" id="bundle-'+escape(bundle.jobId)+'"><div class="area-title"><h2>'+escape(bundle.title)+'</h2><span class="tag">'+displayDate(bundle.date)+'</span></div><p>'+escape(bundle.org)+'</p>'+
       bundle.files.map((file,i)=>'<div class="document-row"><span class="job-icon">'+icon('file')+'</span><div class="doc-label"><strong>'+escape(file.label)+'</strong><p>'+escape([file.viewed?'Viewed':'Ready',file.shared?'Shared':''].filter(Boolean).join(' · '))+'</p></div>'+
@@ -132,13 +137,22 @@ function documents() {
       action('Remove pack','remove-pack','close','button quiet','data-id="'+escape(bundle.jobId)+'"')+'</article>').join('')+'</div>':'<div class="empty panel">'+icon('file',32)+'<h2>No application packs yet</h2><p>Choose a vacancy and select Prepare forms to create your two PDFs.</p><a class="button primary" href="#browse">Browse vacancies '+icon('arrow',16)+'</a></div>')+'</section>';
 }
 function admin() {
-  return '<section class="wrap">'+sectionHeading('LOCAL PREVIEW','Upload PSM circular','Import the circular PDF and review vacancies before replacing the feed in this browser.')+
+  if(!isAdmin)return signInPrompt();
+  return '<section class="wrap">'+sectionHeading('ADMINISTRATION','Upload PSM circular','Import and review the monthly circular before publishing it for all applicants.')+
     '<div class="panel form-panel admin-panel"><label class="button primary file-picker">'+icon('upload')+' Choose circular PDF<input type="file" data-upload="circular" accept="application/pdf,.pdf"></label>'+
-    '<p class="subtle">The preview is local to this browser. Export a reviewed feed for repository publication.</p>'+
+    '<p class="subtle">Publishing replaces the current circular for everyone. Vacancies close at 00:00 Namibia time on the closing date and are removed two days later.</p>'+
     (state.circularDraft?'<form id="publish-form"><h2>Review imported circular</h2>'+grid(input('draft','title','Circular title',null,state.circularDraft.title)+input('draft','advertised','Advertised date','date',state.circularDraft.advertised)+input('draft','closes','Closing date','date',state.circularDraft.closes))+
-      input('draft','jobsText','Vacancies (JSON)','textarea',state.circularDraft.jobsText)+'<p>'+state.circularDraft.jobs.length+' vacancies detected. Review titles, ministries, duty stations and instructions against the PDF.</p><button class="button primary">Replace local feed</button></form>':'')+
+      input('draft','jobsText','Vacancies (JSON)','textarea',state.circularDraft.jobsText)+'<p>'+state.circularDraft.jobs.length+' vacancies detected. Review titles, ministries, duty stations and instructions against the PDF.</p><button class="button primary">Publish circular</button></form>':'')+
     (state.circular!==seed&&state.circular.jobs.length?action('Export reviewed vacancies','export-feed','download'):'')+'</div></section>';
 }
+async function reloadAccount() {
+ state.profile={...fields.blankProfile(),...await get('profile')};
+ state.documents=await get('documents')??[];
+ state.admin=isAdmin;state.notice='';
+ if(state.view==='admin'&&!isAdmin)state.view='browse';
+ render();
+}
+function signInPrompt() {return '<section class="wrap"><div class="empty panel"><h1>Your application workspace</h1><p>Sign in to save your profile and access your forms across devices.</p>'+action('Sign in or register','account','user','button primary')+'</div></section>';}
 function render() {
   root.innerHTML=shell(({browse,profile,documents,admin})[state.view]());
   renderJobs();
@@ -164,6 +178,7 @@ function saveProfile() {
   return put('profile',state.profile);
 }
 async function prepare(jobId) {
+  if(!user){openAccount(reloadAccount);return;}
   if (expired(state.circular)||state.pending) return;
   if (!confirmed()) {
     state.notice='Complete and confirm your profile before preparing forms.';
@@ -231,6 +246,12 @@ root.addEventListener('change',event=>{
   if (el.dataset.field && el.tagName==='SELECT' && (el.dataset.field==='employmentType'||[...fields.health,...fields.disclosures].some(([key])=>key===el.dataset.field))) render();
 });
 async function upload(kind,file) {
+  if(kind==='signature'){
+   try{
+    if(!['image/png','image/jpeg'].includes(file.type)||file.size>2*1024*1024)throw new Error('Choose a PNG or JPEG signature smaller than 2 MB.');
+    const reader=new FileReader();reader.onload=()=>{state.profile.signature=reader.result;state.profile.confirmed=false;render();};reader.readAsDataURL(file);
+   }catch(error){status(error.message);}return;
+  }
   status('Reading PDF…');
   try {
     const {importCircular,importProfile}=await import('./extract.js');
@@ -256,7 +277,7 @@ root.addEventListener('submit',async event=>{
     const next={title,advertised,closes,pdf,jobs};
     await put('circular',next);
     state.circular=next;state.circularDraft=null;state.org='';state.station='';state.query='';state.selected='';
-    retireCircular(); state.notice='The local vacancy feed was replaced.'; go('browse');
+    retireCircular(); state.notice='The circular was published.'; go('browse');
   } catch (error) {status(error.message);}
 });
 root.addEventListener('click',async event=>{
@@ -268,9 +289,10 @@ root.addEventListener('click',async event=>{
     if(name==='prepare') return await prepare(id);
     if(name==='view-bundle'){go('documents');setTimeout(()=>document.getElementById('bundle-'+id)?.scrollIntoView(),50);return;}
     if(name==='profile-section'){state.section=id;render();return;}
-    if(name==='admin-mode'){state.admin=!state.admin;go(state.admin?'admin':'browse');return;}
+    if(name==='account'){openAccount(reloadAccount);return;}
     if(name==='add-row'){state.profile[kind].push({});state.profile.confirmed=false;render();return;}
     if(name==='remove-row'){state.profile[kind].splice(Number(index),1);state.profile.confirmed=false;render();return;}
+    if(name==='remove-signature'){delete state.profile.signature;state.profile.confirmed=false;render();return;}
     if(name==='save'){
       await saveProfile();
       const current=fields.sections.findIndex(([key])=>key===state.section);
@@ -283,7 +305,7 @@ root.addEventListener('click',async event=>{
       state.profile.confirmed=true;await saveProfile();state.notice='Profile confirmed. You can now prepare forms.';go('browse');return;
     }
     if(name==='clear'){
-      if(!window.confirm('Clear the profile and all prepared documents from this browser?'))return;
+      if(!window.confirm('Clear the profile and all prepared documents from your account?'))return;
       await Promise.all([remove('profile'),remove('documents')]);state.profile=fields.blankProfile();state.documents=[];state.section='personal';state.notice='Profile and documents cleared.';render();return;
     }
     if(name==='export-feed'){
@@ -294,7 +316,7 @@ root.addEventListener('click',async event=>{
     const bundle=prepared(id);
     if(!bundle)return;
     if(name==='remove-pack'){
-      if(!window.confirm('Remove this application pack from this browser?'))return;
+      if(!window.confirm('Remove this application pack from your account?'))return;
       const documents=state.documents.filter(item=>item!==bundle);await put('documents',documents);state.documents=documents;render();return;
     }
     await documentAction(name,bundle,Number(index));
@@ -309,6 +331,9 @@ setInterval(()=>{
   if(closed!==previouslyExpired||wasArchived!==state.circular.archived){previouslyExpired=closed;if(state.view==='browse')render();}
 },10000);
 navigate();
+supabase.auth.onAuthStateChange((event)=>{
+ if(event==='PASSWORD_RECOVERY')setTimeout(()=>openAccount(reloadAccount,'password'),0);
+});
 
 }
-initialize().catch(error => { document.querySelector('#app').textContent = 'Unable to open local storage. Enable browser storage and reload. ' + error.message; });
+initialize().catch(error => { document.querySelector('#app').textContent = 'Unable to connect. Check your internet connection and reload. ' + error.message; });

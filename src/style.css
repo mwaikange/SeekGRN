@@ -139,3 +139,18 @@ nav{display:flex;align-items:center;justify-content:center;gap:5px}
 @media(max-width:480px){.wrap{width:calc(100% - 24px)}.brand{font-size:20px}.brand small{font-size:7px;letter-spacing:.7px}.brand-icon{width:36px;height:36px}.nav-link{font-size:12px;gap:5px}.nav-link svg{width:14px}.hero{display:block;border-radius:15px}.hero h1{font-size:53px}.hero-main p{font-size:14px}.issue{margin-top:20px;max-width:100%;display:grid;grid-template-columns:auto 1fr;column-gap:9px}.issue-icon{grid-row:1/5;margin:0}.issue strong{font-size:15px;margin:4px 0}.issue a{margin-top:8px}.issue .eyebrow{font-size:9px}.filters{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.search{grid-column:1/-1}.job-main{grid-template-columns:37px minmax(0,1fr);gap:9px;padding:12px}.job-icon{width:37px;height:37px}.job-action{grid-column:2}.job-action .button{min-height:36px;padding:7px 10px;font-size:12px}.job-meta{gap:4px 9px}.job-detail{padding:12px}.form-panel,.document{padding:13px}.field-grid{grid-template-columns:minmax(0,1fr)}.import-box{align-items:flex-start;flex-direction:column}.document-row{flex-wrap:wrap;gap:5px}.doc-label{min-width:calc(100% - 50px)}.footer{align-items:flex-start;flex-direction:column;gap:4px}.area-title h2{font-size:22px}}
 
 .hero{background-image:linear-gradient(90deg,rgba(12,43,30,.2),rgba(12,43,30,.05)),url(/namibia-art.png);background-size:cover;background-position:center}.hero-art{display:none}.issue{background:rgba(18,50,33,.8)}
+
+.auth-sheet{position:fixed;inset:auto 0 0;margin:0 auto;width:min(640px,100%);height:75dvh;max-height:90dvh;border:0;border-radius:26px 26px 0 0;padding:32px;background:#fff;color:#172c36;animation:slide-up .25s ease;overflow:auto}.auth-sheet::backdrop{background:#10212bb3}.sheet-inner{max-width:430px;margin:auto}.sheet-close{position:absolute;right:14px;top:10px}.auth-sheet h2{font-size:32px}.auth-sheet form,.auth-links{display:grid;gap:16px;margin:22px 0}.auth-sheet .field{display:grid;gap:8px}.auth-sheet input{width:100%;padding:13px;border:1px solid #c4d0cf;border-radius:8px}.auth-sheet #auth-message{color:#8b4319}.auth-sheet button:disabled{opacity:.5;cursor:not-allowed}@keyframes slide-up{from{transform:translateY(100%)}to{transform:translateY(0)}}
+
+/* App navigation with comfortable touch targets. */
+.app-nav .nav-link{min-height:48px}
+@media(max-width:1050px){
+body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+.mast-inner{display:flex;min-height:72px;padding-block:10px;gap:8px}
+.mast-inner .app-nav{position:fixed;inset:auto 0 0;z-index:30;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;padding:8px max(8px,env(safe-area-inset-right,0px)) calc(8px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px));background:var(--paper);border-top:1px solid var(--line);box-shadow:0 -4px 20px #17362c0a;overflow:visible}
+.app-nav .nav-link{flex-direction:column;justify-content:center;gap:5px;min-width:0;min-height:60px;padding:7px 2px;font-size:12px;line-height:1.2;text-align:center;white-space:normal;border-radius:12px}
+.app-nav .nav-link svg{width:22px;height:22px}
+.app-nav .nav-link.active{background:var(--light);color:var(--green);box-shadow:inset 0 3px 0 #59804a}
+.app-nav .nav-link span{max-width:100%;overflow-wrap:anywhere}
+html{scroll-padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
+}
