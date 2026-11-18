@@ -41,6 +41,14 @@ The SMSPortal integration is a Supabase **Send SMS Auth Hook**. Supabase generat
 
 The hook uses SMSPortal v3 `BulkMessages` and Basic authentication. No SMS was sent and no credit was consumed in development tests. Actual delivery requires the credentials and activation above. [SMSPortal quickstart](https://docs.smsportal.com/docs/quickstart) · [Supabase Send SMS hook](https://supabase.com/docs/guides/auth/auth-hooks/send-sms-hook).
 
+### Fix an Invalid payload sent to hook error when adding a phone
+
+The hook must read user.new_phone for a pending mobile number; phone_change is the database field name, while Auth serializes it as new_phone. The handler keeps the old field as a compatibility fallback and reads user.phone for normal mobile sign-in. It does not read a phone from editable user metadata.
+
+In Supabase → Edge Functions → smsportal-otp → Code, replace only handler.js with the repository version and deploy the function again. Leave index.ts, the three existing secrets and the Send SMS hook URL unchanged. Keep Verify JWT OFF; the function verifies the webhook signature. No SQL or account changes are needed.
+
+A GitHub/Vercel deployment updates the website but does not deploy this Supabase function. Retest Send SMS code after saving the new function version. Signed validation/delivery failures use the structured Auth error envelope so the app can show the error; unsigned requests still receive HTTP 401.
+
 ## 4. Apple sign-in
 
 Apple uses Supabase's Apple provider. Configure the Apple Developer Services ID, team/key credentials and callback `https://dmrtrkhjlarjzhaxyflf.supabase.co/auth/v1/callback`, then enable Apple in Supabase. The button automatically becomes available when the provider is enabled. Social signup accepts the server-confirmed provider email, including an Apple relay email. A separate email code is not sent for an already confirmed email. The mobile number still requires SMS verification.

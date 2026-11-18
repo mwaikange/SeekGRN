@@ -256,3 +256,8 @@ html{scroll-padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
 .auth-spinner{display:inline-block;width:15px;height:15px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:auth-spin .8s linear infinite}
 @keyframes auth-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.auth-spinner{animation:none}}
+
+@media(max-width:560px){
+ .footer-legal{flex-wrap:nowrap;gap:clamp(4px,1.2vw,7px);font-size:clamp(10px,2.7vw,12px);line-height:1.5;white-space:nowrap;max-width:100%}
+ .footer-legal a,.footer-legal>span{flex:none;white-space:nowrap;overflow-wrap:normal}
+}

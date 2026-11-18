@@ -82,5 +82,38 @@ test('SMSPortal sends the Supabase code to the pending new phone with server cre
 test('SMSPortal failure never reports a code as delivered or exposes provider details',async()=>{
  const handler=smsPortalHandler({clientId:'client',apiSecret:'secret',verify:()=>({user:{phone:'264818083704'},sms:{otp:'123456'}}),fetcher:async()=>new Response('sensitive provider detail',{status:401})});
  const response=await handler(new Request('https://example.com',{method:'POST',body:'{}'}));
- assert.equal(response.status,502);assert.doesNotMatch(await response.text(),/sensitive provider detail|123456|secret/);
+ assert.equal(response.status,200);const body=await response.json();assert.equal(body.error.http_code,502);assert.doesNotMatch(JSON.stringify(body),/sensitive provider detail|123456|secret/);
+});
+
+test('SMSPortal accepts the Supabase new_phone payload when adding a mobile to an email account',async()=>{
+ let outgoing;
+ const event={user:{id:'email-account',email:'example@example.com',email_confirmed_at:'2026-11-18T08:00:00Z',phone:'',new_phone:'264818083704',is_anonymous:false},sms:{otp:'123456'}};
+ const handler=smsPortalHandler({clientId:'client',apiSecret:'secret',verify:payload=>JSON.parse(payload),fetcher:async(url,options)=>{outgoing=JSON.parse(options.body);return Response.json({errorReport:{noOfErrors:0}});}});
+ const response=await handler(new Request('https://example.com',{method:'POST',body:JSON.stringify(event)}));
+ assert.equal(response.status,200);assert.deepEqual(await response.json(),{});assert.equal(outgoing.messages[0].destination,'264818083704');
+});
+
+test('SMSPortal uses new_phone before the old number and supports ordinary mobile sign-in',async()=>{
+ for(const user of [{phone:'264811111111',new_phone:'+264818083704'},{phone:'264811111111',phone_change:'264822222222',new_phone:'+264818083704'},{phone:'+264818083704'}]){
+  let destination;
+  const handler=smsPortalHandler({clientId:'client',apiSecret:'secret',verify:()=>({user,sms:{otp:'123456'}}),fetcher:async(url,options)=>{destination=JSON.parse(options.body).messages[0].destination;return Response.json({errorReport:{noOfErrors:0}});}});
+  assert.equal((await handler(new Request('https://example.com',{method:'POST',body:'{}'}))).status,200);assert.equal(destination,'264818083704');
+ }
+});
+
+test('malformed signed SMS events return a structured Auth error without sending or leaking a code',async()=>{
+ const events=[null,{}, {user:{new_phone:'invalid',phone:'264818083704'},sms:{otp:'123456'}},{user:{new_phone:'264818083704'},sms:{otp:'invalid'}},{user:{user_metadata:{contact_phone:'264818083704'}},sms:{otp:'123456'}}];
+ for(const event of events){
+  const handler=smsPortalHandler({clientId:'client',apiSecret:'secret',verify:()=>event,fetcher:()=>assert.fail('must not send malformed events')});
+  const response=await handler(new Request('https://example.com',{method:'POST',body:'{}'}));
+  assert.equal(response.status,200);const body=await response.json();assert.equal(body.error.http_code,400);assert.match(body.error.message,/invalid mobile number or code/);assert.doesNotMatch(JSON.stringify(body),/123456|secret/);
+ }
+});
+
+test('SMSPortal message rejection and timeouts remain structured errors instead of false success',async()=>{
+ for(const fetcher of [async()=>Response.json({errorReport:{noOfErrors:1}}),async()=>{throw Error('sensitive network detail');}]){
+  const handler=smsPortalHandler({clientId:'client',apiSecret:'secret',verify:()=>({user:{new_phone:'264818083704'},sms:{otp:'123456'}}),fetcher});
+  const response=await handler(new Request('https://example.com',{method:'POST',body:'{}'}));
+  assert.equal(response.status,200);const body=await response.json();assert.equal(body.error.http_code,502);assert.doesNotMatch(JSON.stringify(body),/sensitive network detail|123456|secret/);
+ }
 });
