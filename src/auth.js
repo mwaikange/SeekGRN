@@ -17,14 +17,14 @@ export function openAccount(onChange, initial='login', onSuccess=()=>{}) {
  dialog.setAttribute('aria-labelledby','auth-title'); document.body.append(dialog); document.body.classList.add('sheet-open');
  const message = text => {const node=dialog.querySelector('#auth-message'); if(node)node.textContent=text;};
  const remember = extra => sessionStorage.setItem(pendingKey,JSON.stringify({email,phone,...extra}));
- const phoneField = () => '<label class="field"><span>Mobile number</span><span class="phone-input"><span class="phone-prefix">+264</span><input name="phone" aria-label="Mobile number" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="81 808 3704" value="'+safe(phone.replace(/^\+?264/,''))+'" required></span></label>';
+ const phoneField = () => '<label class="field"><span>Mobile number</span><span class="phone-input"><span class="phone-prefix">+264</span><input name="phone" aria-label="Mobile number" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="81 234 5678" value="'+safe(phone.replace(/^\+?264/,''))+'" required></span></label>';
  const emailField = (readonly=false) => '<label class="field"><span>Email address</span><input name="email" type="email" autocomplete="email" value="'+safe(email)+'" '+(readonly?'readonly':'')+' required></label>';
  const passwordField = () => '<label class="field"><span>Password</span><input name="password" type="password" autocomplete="'+(mode==='login'?'current-password':'new-password')+'" minlength="8" required></label>';
  function draw(info='') {
   const signup=mode==='signup',login=mode==='login',verify=mode==='verify',contacts=mode==='contacts';
   const titles={login:'Welcome back.',signup:'Create your account.',forgot:'Reset your password.',verify:'Check your '+(challenge?.phone?'mobile.':'email.'),password:'Choose a new password.',contacts:'Complete your account.',account:'Your account.'};
   let content='';
-  if(mode==='account') content='<div class="account-details"><p>'+safe(user?.email || 'Email not added')+'</p><p>'+safe(user?.phone || 'Mobile number not verified')+'</p><span class="tag">'+(verifiedContacts(user)?'Both contacts verified':'Contact verification pending')+'</span></div><button class="button primary" data-mode="contacts">'+icon('shield')+' Verify contact details</button><button class="button secondary" id="signout">Sign out</button>';
+  if(mode==='account') content='<div class="account-details"><p>'+safe(user?.email || 'Email not added')+'</p><p>'+safe(user?.phone || 'Mobile number not verified')+'</p><span class="tag">'+(verifiedContacts(user)?'Both contacts verified':'Contact verification pending')+'</span></div>'+(isAdmin?'<a class="button secondary" href="#admin" data-legal>'+icon('upload')+' Manage PSM circular</a>':'')+'<button class="button primary" data-mode="contacts">'+icon('shield')+' Verify contact details</button><button class="button secondary" id="signout">Sign out</button>';
   else {
    if(login||signup) content+='<div class="auth-tabs" role="group" aria-label="Sign-in method"><button type="button" data-method="email" aria-pressed="'+(method==='email')+'">'+icon('mail')+'Email</button><button type="button" data-method="mobile" aria-pressed="'+(method==='mobile')+'">'+icon('phone')+'Mobile</button></div>';
    content+='<form id="auth-form">';
@@ -54,7 +54,7 @@ export function openAccount(onChange, initial='login', onSuccess=()=>{}) {
   }));
   dialog.querySelector('#signout')?.addEventListener('click',()=>run(async()=>{
    const {error}=await supabase.auth.signOut();if(error)throw error;
-   sessionStorage.removeItem(pendingKey);await refreshAccount();await onChange();dialog.close();
+   sessionStorage.removeItem(pendingKey);sessionStorage.removeItem('seekgrn-action');await refreshAccount();dialog.close();await onChange();
   }));
   dialog.querySelector('#email-code')?.addEventListener('click',()=>run(async()=>{
    capture();const field=dialog.querySelector('[name="email"]');if(!field.reportValidity())return;

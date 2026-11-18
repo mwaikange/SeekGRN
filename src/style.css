@@ -2,7 +2,13 @@
 
 :root{font-family:'DM Sans',system-ui,sans-serif;color:#162e27;background:#f7f7f1;font-synthesis:none;--paper:#fffefa;--ink:#17362c;--muted:#576b62;--line:#e1e6db;--green:#173b30;--light:#eaf0e5;--lime:#d7eab6}
 *{box-sizing:border-box}
-body{margin:0;min-width:310px}
+html{max-width:100%;overflow-x:clip}
+body{margin:0;min-width:0;max-width:100%;overflow-x:clip}
+img,canvas,video{max-width:100%}
+#app,main,.mast-inner,.hero-main,.job-copy,.panel,.form-panel,.footer>div{min-width:0}
+.job-copy,.document,.legal-page,.notice,.footer{overflow-wrap:anywhere}
+.job-tags{flex-wrap:wrap;min-width:0}
+.job-tags .tag{max-width:100%;white-space:normal;overflow-wrap:anywhere}
 button,input,select,textarea{font:inherit}
 button,a,input,select,textarea{-webkit-tap-highlight-color:transparent}
 a{color:inherit;text-decoration:none}
@@ -145,7 +151,7 @@ nav{display:flex;align-items:center;justify-content:center;gap:5px}
 /* App navigation with comfortable touch targets. */
 .app-nav .nav-link{min-height:48px}
 @media(max-width:1050px){
-body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+body.has-app-nav{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 .mast-inner{display:flex;min-height:72px;padding-block:10px;gap:8px}
 .mast-inner .app-nav{position:fixed;inset:auto 0 0;z-index:30;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;padding:8px max(8px,env(safe-area-inset-right,0px)) calc(8px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px));background:var(--paper);border-top:1px solid var(--line);box-shadow:0 -4px 20px #17362c0a;overflow:visible}
 .app-nav .nav-link{flex-direction:column;justify-content:center;gap:5px;min-width:0;min-height:60px;padding:7px 2px;font-size:12px;line-height:1.2;text-align:center;white-space:normal;border-radius:12px}
@@ -163,7 +169,7 @@ html{scroll-padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
 .sheet-content{flex:1;min-height:0;overflow:auto;scrollbar-width:thin;scrollbar-color:#5f774c transparent;padding:0 1px 4px}
 .sheet-handle{position:absolute;top:10px;left:calc(50% - 21px);width:42px;height:3px;border-radius:4px;background:#91a37666}
 .auth-sheet .sheet-close{position:absolute;right:8px;top:6px;min-width:34px;min-height:34px;padding:7px;color:#f7f8ee;background:transparent;z-index:1}
-.auth-sheet h2{font-family:'Instrument Serif',Georgia,serif;font-size:30px;line-height:1.08;letter-spacing:-.5px;font-weight:400;margin:1px 30px 9px 0;color:#fffdf1}
+.auth-sheet h2{font-family:inherit;font-size:28px;line-height:1.15;letter-spacing:-.5px;font-weight:700;margin:1px 30px 9px 0;color:#fffdf1}
 .auth-sheet form{display:grid;gap:8px;margin:0}
 .auth-sheet .field{font-size:12px;line-height:1.2;color:#e1e8d4;gap:4px;min-width:0}
 .auth-sheet input{width:100%;min-width:0;min-height:42px;height:42px;background:#15351e;border:1px solid #60744b;border-radius:9px;padding:9px 11px;color:#fffdf1;font-size:16px;line-height:22px;outline-offset:2px}
@@ -201,7 +207,7 @@ html{scroll-padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
 .auth-sheet .account-details+.button{margin-bottom:10px}
 .auth-sheet .account-details .tag{background:#28482b;color:#d5e2ba}
 .auth-sheet[data-mode=contacts] form>p,.auth-sheet[data-mode=verify] form>p{font-size:13px;color:#cfdbc0;line-height:1.45;margin:0 0 4px}
-@media(max-height:650px){.auth-sheet{padding-top:25px;padding-bottom:max(8px,env(safe-area-inset-bottom,0px));padding-inline:20px}.auth-sheet h2{font-size:27px;margin-bottom:7px}.auth-sheet .field{gap:3px}.auth-sheet form{gap:6px}.auth-tabs{margin-bottom:7px}.auth-sheet .sheet-legal{padding-top:6px;font-size:10px;line-height:13px}.sheet-legal::before{margin-bottom:6px}.auth-divider{margin-block:6px}.auth-sheet .auth-switch{margin-top:4px}}
+@media(max-height:650px){.auth-sheet{padding-top:25px;padding-bottom:max(8px,env(safe-area-inset-bottom,0px));padding-inline:20px}.auth-sheet h2{font-size:25px;margin-bottom:7px}.auth-sheet .field{gap:3px}.auth-sheet form{gap:6px}.auth-tabs{margin-bottom:7px}.auth-sheet .sheet-legal{padding-top:6px;font-size:10px;line-height:13px}.sheet-legal::before{margin-bottom:6px}.auth-divider{margin-block:6px}.auth-sheet .auth-switch{margin-top:4px}}
 .footer-legal{justify-content:flex-start;flex-wrap:wrap;gap:20px;margin:14px 0 9px}
 .footer-legal a{text-decoration:underline;text-underline-offset:3px}
 .footer-owner{font-size:11px;color:#65705d}
@@ -217,3 +223,25 @@ html{scroll-padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
 @media(max-width:1050px){body.home-screen{padding-bottom:0}.home-mast .mast-inner{justify-content:space-between}.home-mast .mast-action{margin-left:auto}}
 @media(max-width:560px){.pdf-controls .button{padding:8px;font-size:12px}}
 @media(prefers-reduced-motion:reduce){.auth-sheet{animation:none}}
+
+/* Fit the app shell to narrow WebViews and respect the device safe areas. */
+.mast{padding-top:env(safe-area-inset-top,0px)}
+.footer{padding-bottom:max(23px,env(safe-area-inset-bottom,0px))}
+.legal-page a:not(.button){text-decoration:underline;text-underline-offset:3px}
+.removal-page form{display:grid;gap:16px}
+.removal-consent{display:flex;align-items:flex-start;gap:10px;font-size:14px;line-height:1.5}
+.removal-consent input{flex:none;width:20px;height:20px;margin-top:2px}
+.form-trap{display:none}
+#removal-status:empty{display:none}
+#removal-status{margin:0;overflow-wrap:anywhere}
+@media(max-width:480px){
+ .mast-inner .brand{min-width:0;gap:7px;font-size:clamp(16px,5vw,20px);letter-spacing:-.8px}
+ .mast-inner .brand small{font-size:clamp(5px,1.6vw,7px);letter-spacing:.3px;white-space:normal}
+ .mast-action{min-width:0;gap:4px;padding-inline:5px;font-size:11px;flex-shrink:0}
+ .mast-action svg{width:17px;height:17px}
+ .brand-icon{width:32px;height:34px}
+ .hero h1{font-size:clamp(40px,12.5vw,53px)}
+ .field input,.field select,.field textarea{font-size:16px}
+ .form-footer{flex-wrap:wrap}
+ .auth-sheet{padding-inline:16px}
+}

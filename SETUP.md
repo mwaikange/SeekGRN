@@ -45,7 +45,22 @@ The hook uses SMSPortal v3 `BulkMessages` and Basic authentication. No SMS was s
 
 Apple uses Supabase's Apple provider. Configure the Apple Developer Services ID, team/key credentials and callback `https://dmrtrkhjlarjzhaxyflf.supabase.co/auth/v1/callback`, then enable Apple in Supabase. The button automatically becomes available when the provider is enabled. Social signup still requires the contact verification screens; provider email is used for the email code, including an Apple relay email when selected.
 
-## 5. Google sign-in — final setup
+## Account-removal request email (Vercel)
+
+The public `/request-account-removal` page works without sign-in. Its Send button posts to `/api/account-removal`; the server emails only `support@paysme.site`. It does not delete accounts automatically. Support must verify ownership before removing the Auth user and saved applicant records. Do not request passwords or OTPs.
+
+To enable delivery, verify your sending domain in [Resend](https://resend.com/domains), create a sending API key, and add these **server-only Vercel environment variables** to Production and any Preview environment you want to test:
+
+- `RESEND_API_KEY`: your Resend sending key.
+- `ACCOUNT_REMOVAL_FROM`: `SeekGRNJobs <support@paysme.site>` (or another sender on your verified domain).
+
+Redeploy after adding the variables. Never prefix either variable with `VITE_`. The SMSPortal secrets still belong only in Supabase. No new Supabase migration or Auth change is needed for this page.
+
+Without sender credentials, the form displays a clear error and directs the user to email support; it never reports a request as sent. Test one real request after configuring the sender and confirm it arrives in the support mailbox. Automated tests use mock delivery and send no real email.
+
+The endpoint validates input and same-origin browser requests, uses a honeypot and best-effort instance-local throttling, and deduplicates email retries through Resend. For higher traffic, add shared rate limiting or a managed challenge using Vercel's firewall. The client also prevents repeat sends while submitting.
+
+## 5. Google sign-in - final setup
 
 1. Open [Google Cloud Console](https://console.cloud.google.com/apis/credentials), select/create the project and configure the Google Auth Platform branding, audience and consent screen for SeekGRNJobs. Add test users if the app is in Testing.
 2. Create an **OAuth client ID → Web application**.

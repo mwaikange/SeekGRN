@@ -6,6 +6,7 @@ import { get, put, remove } from './storage.js';
 import {connect,supabase,user,isAdmin,refreshAccount} from './backend.js';
 import {openAccount,registrationPending} from './auth.js';
 import {legalPage} from './legal.js';
+import {removalPage,submitRemoval} from './removal.js';
 
 async function initialize() {
 let recovering = false;
@@ -62,10 +63,10 @@ retireCircular();
 function shell(content) {
   return '<a class="skip" href="#main">Skip to content</a><header class="mast '+(state.view==='browse'?'home-mast':'')+'"><div class="wrap mast-inner">'+
     '<a class="brand" href="#browse"><span class="brand-icon">'+icon('briefcase',23)+'</span><span>Seek<span class="brand-grn">GRN</span>Jobs<small>NAMIBIA PUBLIC SERVICE VACANCIES</small></span></a>'+
-    (state.view==='browse'?(state.admin?'<a class="button quiet" href="#admin">'+icon('upload')+'Upload PSM</a>':''):'<nav class="app-nav" aria-label="Main navigation">'+nav.map(navLink).join('')+(state.admin?navLink(['admin','upload','Upload PSM']):'')+'</nav>')+
+    (user&&state.view!=='browse'?'<nav class="app-nav" aria-label="Main navigation">'+nav.map(navLink).join('')+'</nav>':'')+
     action(user?'My account':'Sign in','account','user','button quiet mast-action')+'</div></header>'+
     '<main id="main">'+content+'<p id="notice" role="status" class="notice wrap" '+(state.notice?'':'hidden')+'>'+escape(state.notice)+'</p></main>'+
-    '<footer class="wrap footer"><div><a class="footer-brand" href="#browse">SeekGRNJobs</a><p>Independent application preparation tool for Namibia’s Public Service.</p><nav class="footer-legal" aria-label="Legal"><a href="#terms">Terms of Service</a><a href="#privacy">Privacy Policy</a></nav><p class="footer-owner">Owned, Managed by Mwai PaySME Solutions cc</p></div></footer>';
+    '<footer class="wrap footer"><div><a class="footer-brand" href="#browse">SeekGRNJobs</a><p>Independent application preparation tool for Namibia’s Public Service.</p><nav class="footer-legal" aria-label="Legal"><a href="#terms">Terms of Service</a><a href="#privacy">Privacy Policy</a><a href="/request-account-removal">Request Account Removal</a></nav><p><a href="mailto:support@paysme.site">support@paysme.site</a> · <a href="tel:+264836795150">+264 83 679 5150</a></p><p class="footer-owner">Owned &amp; Managed by Mwai PaySME Solutions cc</p></div></footer>';
 }
 function sectionHeading(label, title, subtitle) {
   return '<div class="page-head"><span class="eyebrow">'+escape(label)+'</span><h1>'+escape(title)+'</h1><p>'+escape(subtitle)+'</p></div>';
@@ -174,6 +175,14 @@ function admin() {
     (state.circular.jobs.length?action('Export reviewed vacancies','export-feed','download'):'')+'</div></section>';
 }
 async function reloadAccount() {
+ if(!user){
+  sessionStorage.removeItem(intentKey);
+  sessionStorage.removeItem('seekgrn-registration');
+  document.querySelector('.auth-sheet')?.close();
+  state.view='browse';state.profile=fields.blankProfile();state.documents=[];
+  state.admin=false;state.notice='';state.circularDraft=undefined;state.pending=null;
+  history.replaceState(null,'','/#browse');render();window.scrollTo(0,0);return;
+ }
  state.profile={...fields.blankProfile(),...await get('profile')};
  state.documents=await get('documents')??[];
  state.admin=isAdmin;state.notice='';
@@ -188,7 +197,9 @@ function circular() {
 function render() {
   closeViewer?.();closeViewer=undefined;
   document.body.classList.toggle('home-screen',state.view==='browse');
-  root.innerHTML=shell(({browse,profile,documents,admin,circular,terms:()=>legalPage('terms'),privacy:()=>legalPage('privacy')})[state.view]());
+  document.body.classList.toggle('has-app-nav',Boolean(user&&state.view!=='browse'));
+  root.innerHTML=shell(({browse,profile,documents,admin,circular,terms:()=>legalPage('terms'),privacy:()=>legalPage('privacy'),removal:()=>removalPage(user)})[state.view]());
+  root.querySelector('#removal-form')?.addEventListener('submit',submitRemoval);
   renderJobs();
   if(state.view==='circular'&&user&&!registrationPending()) {
     const container=root.querySelector('#circular-viewer');
@@ -200,11 +211,11 @@ function render() {
 }
 function navigate() {
   if(location.hash==='#main') return;
-  const target=location.hash.slice(1);
+  const target=location.hash.slice(1)||(location.pathname==='/request-account-removal'?'removal':'browse');
   if(['profile','documents','circular'].includes(target)&&!requireAccount({view:target})) {
     history.replaceState(null,'',location.pathname+location.search+'#browse');state.view='browse';render();return;
   }
-  state.view=target==='admin'&&state.admin?'admin':[...nav.map(([id])=>id),'circular','terms','privacy'].includes(target)?target:'browse';
+  state.view=target==='admin'&&state.admin?'admin':[...nav.map(([id])=>id),'circular','terms','privacy','removal'].includes(target)?target:'browse';
   render();
   window.scrollTo(0,0);
 }
