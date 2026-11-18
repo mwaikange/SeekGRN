@@ -8,8 +8,10 @@ export let user = null;
 export let isAdmin = false;
 export let providers = {};
 export async function refreshAccount() {
- const result=await supabase.auth.getUser();
- user=result.data.user;
+ const session=await supabase.auth.getSession();
+ const localUser=session.data.session?.user;
+ const result=localUser?await supabase.auth.getUser():null;
+ user=result?.data.user??null;
  isAdmin=false;
  if(user) {
   const {data,error}=await supabase.from('app_admins').select('user_id').eq('user_id',user.id).maybeSingle();

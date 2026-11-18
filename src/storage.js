@@ -4,7 +4,7 @@ export async function get(key) {
   const {data,error}=await supabase.from('circulars').select('*').eq('id',1).maybeSingle();
   if(error)throw error;
   if(!data)return {title:'No current circular',jobs:[],closes:'2000-01-01',advertised:'2000-01-01',archived:true};
-  return {...data,pdf:data.pdf?decode(JSON.parse(data.pdf)):null};
+  return {...data,pdf:data.pdf==='/circular.pdf'?data.pdf:data.pdf?decode(JSON.parse(data.pdf)):null};
  }
  if(!user)return undefined;
  const {data,error}=await supabase.from('applicant_data').select('value').eq('user_id',user.id).eq('key',key).maybeSingle();
@@ -19,7 +19,10 @@ export async function put(key,value) {
   if(error)throw error; return;
  }
  if(!user)throw new Error('Sign in to save your profile and documents.');
- const {error}=await supabase.from('applicant_data').upsert({user_id:user.id,key,value:await encode(value),updated_at:new Date().toISOString()});
+ const userId=user.id;
+ const encoded=await encode(value);
+ if(user?.id!==userId)throw new Error('Your session changed. Sign in again to save.');
+ const {error}=await supabase.from('applicant_data').upsert({user_id:userId,key,value:encoded,updated_at:new Date().toISOString()});
  if(error)throw error;
 }
 export async function remove(key) {

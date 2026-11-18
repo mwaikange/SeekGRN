@@ -1,22 +1,35 @@
 import './style.css';
 import { icon } from './icons.js';
-import { seed, displayDate, expired, retired } from './circular.js';
+import { displayDate, expired, retired } from './circular.js';
 import * as fields from './profile.js';
 import { get, put, remove } from './storage.js';
-import {connect,supabase,user,isAdmin} from './backend.js';
+import {connect,supabase,user,isAdmin,refreshAccount} from './backend.js';
 import {openAccount} from './auth.js';
 
 async function initialize() {
+let recovering = false;
+const authSubscription = supabase.auth.onAuthStateChange(event => {
+  if (event === 'PASSWORD_RECOVERY') recovering = true;
+});
 await connect();
+authSubscription.data.subscription.unsubscribe();
 const root = document.querySelector('#app');
 const blank = fields.blankProfile();
 const nav = [['browse','grid','Browse'],['profile','user','Profile'],['documents','file','My Documents']];
 const state = {
   view: 'browse', section: 'personal', profile: {...blank,...await get('profile')},
-  documents: await get('documents') ?? [], circular: await get('circular') ?? seed,
+  documents: await get('documents') ?? [], circular: await get('circular'),
   admin: isAdmin, query: '', org: '', station: '', selected: '', notice: '', jobStatus: '', pending: null
 };
-const circularUrl = new URL('/circular.pdf', location.origin);
+let cachedPdf, cachedPdfUrl;
+function circularLink(circular) {
+  if (cachedPdf !== circular.pdf) {
+    if (cachedPdfUrl) URL.revokeObjectURL(cachedPdfUrl);
+    cachedPdf = circular.pdf;
+    cachedPdfUrl = cachedPdf instanceof Blob ? URL.createObjectURL(cachedPdf) : '';
+  }
+  return cachedPdfUrl || (typeof cachedPdf === 'string' ? cachedPdf : '');
+}
 const escape = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const action = (label, name, symbol, classes='button secondary', props='') =>
   '<button type="button" class="'+classes+'" data-action="'+name+'" '+props+'>'+(symbol?icon(symbol):'')+escape(label)+'</button>';
@@ -27,7 +40,7 @@ const status = message => {state.notice=message; const el=root.querySelector('#n
 function retireCircular() {
   if (!retired(state.circular) || state.circular.archived) return;
   state.circular = {...state.circular,jobs:[],pdf:null,archived:true};
-  
+
 }
 retireCircular();
 
@@ -48,11 +61,11 @@ function filterOptions(key, label) {
 }
 function browse() {
   const c=state.circular;
-  const link = c.pdf ? URL.createObjectURL(c.pdf) : c===seed && !c.archived ? circularUrl.href : '';
+  const link = circularLink(c);
   return '<div class="wrap"><section class="hero"><div class="hero-art" aria-hidden="true"><i></i><i></i><i></i></div><div class="hero-main"><span class="eyebrow"><span class="signal"></span> NAMIBIA PUBLIC SERVICE</span>'+
     '<h1>Find your next<br><em>public service role.</em></h1><p>Explore vacancies from the PSM circular and prepare the official application forms using your saved profile.</p></div>'+
     '<div class="issue"><span class="issue-icon">'+icon('file',24)+'</span><span class="eyebrow">CURRENT CIRCULAR</span><strong>'+escape(c.title)+'</strong>'+
-    '<span class="issue-date">'+icon('clock',16)+(c.archived?'Archived':(expired(c)?'Closed ':'Closes ')+displayDate(c.closes))+'</span>'+
+    '<span class="issue-date">'+icon('clock',16)+(c.archived?'Awaiting publication':(expired(c)?'Closed ':'Closes ')+displayDate(c.closes))+'</span>'+
     (link?'<a href="'+escape(link)+'" target="_blank" rel="noopener">Read circular '+icon('external',15)+'</a>':'')+'</div></section>'+
     '<div class="workbench"><section class="vacancies"><div class="area-title"><h2>Browse vacancies</h2><span class="count" id="count"></span></div>'+
     '<div class="filters"><label class="search">'+icon('search')+'<input aria-label="Search vacancies" placeholder="Search by job title or ministry" value="'+escape(state.query)+'" data-filter="query"></label>'+filterOptions('org','All ministries')+filterOptions('station','All duty stations')+'</div>'+
@@ -70,13 +83,13 @@ function renderJobs() {
   list.innerHTML=jobs.length?jobs.map(j=>{
     const done=prepared(j.id);
     const expanded=state.selected===j.id;
-    const record=['requirements','duties','contact','delivery','details'].filter(k=>j[k]).map(k=>'<div><h3>'+({requirements:'Requirements',duties:'Responsibilities',contact:'Enquiries',delivery:'Where to submit',details:'Circular listing'})[k]+'</h3><p>'+escape(j[k])+'</p></div>').join('');
+    const record=expanded?['requirements','duties','contact','delivery','details'].filter(k=>j[k]).map(k=>'<div><h3>'+({requirements:'Requirements',duties:'Responsibilities',contact:'Enquiries',delivery:'Where to submit',details:'Circular listing'})[k]+'</h3><p>'+escape(j[k])+'</p></div>').join(''):'';
     return '<article class="job"><div class="job-main"><span class="job-icon">'+icon('building',23)+'</span><div class="job-copy"><div class="job-tags"><span class="tag">'+escape(j.grade?'Grade '+j.grade:'Public service')+'</span>'+ (j.reference?'<span class="tag muted">'+escape(j.reference)+'</span>':'')+'</div>'+
       '<h3><button type="button" class="title-link" aria-expanded="'+expanded+'" data-action="details" data-id="'+escape(j.id)+'">'+escape(j.title)+'</button></h3><p class="job-org">'+escape(j.org)+'</p>'+
       '<p class="job-meta">'+(j.station?'<span>'+icon('pin',15)+escape(j.station)+'</span>':'')+'<span>'+icon('clock',15)+(expired(c)?'Closed ':'Closes ')+displayDate(c.closes)+'</span></p></div>'+
       '<div class="job-action">'+(done?action('View forms','view-bundle','file','button secondary','data-id="'+escape(j.id)+'"'):action(state.pending===j.id?state.jobStatus:expired(c)?'Closed':'Prepare forms','prepare','arrow','button secondary','data-id="'+escape(j.id)+'" '+(expired(c)||state.pending?'disabled':'')))+'</div></div>'+
-      (expanded?'<div class="job-detail"><div class="job-extra"><span>'+escape(j.unit)+'</span><strong>'+escape(j.salary)+'</strong></div>'+record+(j.page?'<p class="source">Circular page '+escape(j.page)+'</p>':'')+'</div>':'')+'</article>';
-  }).join(''):'<div class="empty">'+icon('search',28)+'<h3>'+ (c.archived?'This circular has been archived':'No matching vacancies')+'</h3><p>'+(c.archived?'New vacancies will appear when the next circular is published.':'Try a different search or clear the ministry and duty station filters.')+'</p></div>';
+      (expanded?'<div class="job-detail"><div class="job-extra"><span>'+escape(j.unit)+'</span><strong>'+escape(j.salary)+'</strong></div>'+record+(j.page&&circularLink(c)?'<p class="source"><a target="_blank" rel="noopener" href="'+escape(circularLink(c)+'#page='+j.page)+'">Check the official circular from page '+escape(j.page)+'</a></p>':'')+'</div>':'')+'</article>';
+  }).join(''):'<div class="empty">'+icon('search',28)+'<h3>'+ (c.archived?'No current circular':'No matching vacancies')+'</h3><p>'+(c.archived?'New vacancies will appear when the next circular is published.':'Try a different search or clear the ministry and duty station filters.')+'</p></div>';
 }
 function input(section,key,label,type,value) {
   const attrs=' data-field="'+escape(key)+'" data-section="'+escape(section)+'"';
@@ -133,8 +146,8 @@ function documents() {
       action('View','open-doc','external','button quiet','data-id="'+escape(bundle.jobId)+'" data-index="'+i+'"')+
       action('Download','download','download','button secondary','data-id="'+escape(bundle.jobId)+'" data-index="'+i+'"')+
       action('Share','share','share','button secondary','data-id="'+escape(bundle.jobId)+'" data-index="'+i+'"')+'</div>').join('')+
-      '<p class="subtle">Print and sign both forms. Attach your CV and certified supporting documents, then follow the circular’s delivery instructions.</p>'+
-      action('Remove pack','remove-pack','close','button quiet','data-id="'+escape(bundle.jobId)+'"')+'</article>').join('')+'</div>':'<div class="empty panel">'+icon('file',32)+'<h2>No application packs yet</h2><p>Choose a vacancy and select Prepare forms to create your two PDFs.</p><a class="button primary" href="#browse">Browse vacancies '+icon('arrow',16)+'</a></div>')+'</section>';
+      '<p class="subtle">Review and sign the forms. Include the additional information sheet if one was generated, plus your CV and certified supporting documents. Follow the circular’s delivery instructions.</p>'+
+      action('Remove pack','remove-pack','close','button quiet','data-id="'+escape(bundle.jobId)+'"')+'</article>').join('')+'</div>':'<div class="empty panel">'+icon('file',32)+'<h2>No application packs yet</h2><p>Choose a vacancy and select Prepare forms to complete the official PDFs.</p><a class="button primary" href="#browse">Browse vacancies '+icon('arrow',16)+'</a></div>')+'</section>';
 }
 function admin() {
   if(!isAdmin)return signInPrompt();
@@ -143,7 +156,7 @@ function admin() {
     '<p class="subtle">Publishing replaces the current circular for everyone. Vacancies close at 00:00 Namibia time on the closing date and are removed two days later.</p>'+
     (state.circularDraft?'<form id="publish-form"><h2>Review imported circular</h2>'+grid(input('draft','title','Circular title',null,state.circularDraft.title)+input('draft','advertised','Advertised date','date',state.circularDraft.advertised)+input('draft','closes','Closing date','date',state.circularDraft.closes))+
       input('draft','jobsText','Vacancies (JSON)','textarea',state.circularDraft.jobsText)+'<p>'+state.circularDraft.jobs.length+' vacancies detected. Review titles, ministries, duty stations and instructions against the PDF.</p><button class="button primary">Publish circular</button></form>':'')+
-    (state.circular!==seed&&state.circular.jobs.length?action('Export reviewed vacancies','export-feed','download'):'')+'</div></section>';
+    (state.circular.jobs.length?action('Export reviewed vacancies','export-feed','download'):'')+'</div></section>';
 }
 async function reloadAccount() {
  state.profile={...fields.blankProfile(),...await get('profile')};
@@ -186,16 +199,20 @@ async function prepare(jobId) {
     return;
   }
   const circular=state.circular;
+  const applicantId=user.id;
+  const profile=structuredClone(state.profile);
   const job=circular.jobs.find(j=>j.id===jobId);
   if (!job) return;
   state.pending=jobId; state.jobStatus='Loading…'; renderJobs();
   try {
     const {prepareForms}=await import('./pdf.js');
     state.jobStatus='Filling forms…'; renderJobs();
-    const bundle=await prepareForms(state.profile,job,circular);
+    const bundle=await prepareForms(profile,job,circular);
+    if(user?.id!==applicantId) return;
     if (expired(circular)) throw new Error('This vacancy has closed.');
     const documents=[bundle,...state.documents.filter(item=>item.jobId!==jobId)];
     await put('documents',documents);
+    if(user?.id!==applicantId) return;
     state.documents=documents;
     status('Application and health forms completed.');
   } catch (error) { status(error.message); }
@@ -203,6 +220,8 @@ async function prepare(jobId) {
 }
 async function documentAction(name,bundle,index) {
   const file=bundle.files[index];
+  if (!file || !user) return;
+  const applicantId=user.id;
   if (name==='download') return download(file.blob,file.name);
   if (name==='open-doc') {
     const href=URL.createObjectURL(file.blob);
@@ -220,12 +239,12 @@ async function documentAction(name,bundle,index) {
       dialog.className='panel share-dialog';
       dialog.innerHTML='<h2>Share '+escape(file.label)+'</h2><p>Download the PDF first, then attach it in your email or WhatsApp message.</p><div class="dialog-actions"><a class="button secondary" href="mailto:?subject='+encodeURIComponent(file.label)+'">Email</a><a class="button secondary" href="https://wa.me/" target="_blank" rel="noopener">WhatsApp</a><button class="button primary" data-download>Download PDF</button><button class="button quiet" data-mark>Mark shared</button><form method="dialog"><button class="button quiet">Close</button></form></div>';
       dialog.querySelector('[data-download]').onclick=()=>download(file.blob,file.name);
-      dialog.querySelector('[data-mark]').onclick=async()=>{file.shared=true; await put('documents',state.documents); dialog.close(); render();};
+      dialog.querySelector('[data-mark]').onclick=async()=>{if(user?.id!==applicantId){dialog.close();return;}file.shared=true; await put('documents',state.documents); dialog.close(); render();};
       dialog.addEventListener('close',()=>dialog.remove());
       document.body.append(dialog); dialog.showModal(); return;
     }
   }
-  await put('documents',state.documents); render();
+  if(user?.id===applicantId){await put('documents',state.documents); render();}
 }
 root.addEventListener('input',event=>{
   const el=event.target;
@@ -270,15 +289,20 @@ async function upload(kind,file) {
 root.addEventListener('submit',async event=>{
   if(event.target.id!=='publish-form') return;
   event.preventDefault();
+  const publishButton=event.target.querySelector('button[type="submit"],button');
+  if(publishButton.disabled)return;
+  publishButton.disabled=true;
   try {
     const {title,advertised,closes,pdf,jobsText}=state.circularDraft;
     const jobs=JSON.parse(jobsText);
     if (!title?.trim()||!advertised||!closes||closes<advertised||!Array.isArray(jobs)||!jobs.length||jobs.some(j=>!j?.id||!j?.title||!j?.org||!j?.station)||new Set(jobs.map(j=>j.id)).size!==jobs.length) throw new Error('Enter a title, valid dates and unique, complete vacancies before replacing the feed.');
     const next={title,advertised,closes,pdf,jobs};
+    if(expired(next)) throw new Error('Enter a closing date in the future.');
     await put('circular',next);
     state.circular=next;state.circularDraft=null;state.org='';state.station='';state.query='';state.selected='';
     retireCircular(); state.notice='The circular was published.'; go('browse');
   } catch (error) {status(error.message);}
+  finally {publishButton.disabled=false;}
 });
 root.addEventListener('click',async event=>{
   const btn=event.target.closest('button[data-action]');
@@ -331,8 +355,14 @@ setInterval(()=>{
   if(closed!==previouslyExpired||wasArchived!==state.circular.archived){previouslyExpired=closed;if(state.view==='browse')render();}
 },10000);
 navigate();
-supabase.auth.onAuthStateChange((event)=>{
- if(event==='PASSWORD_RECOVERY')setTimeout(()=>openAccount(reloadAccount,'password'),0);
+if(recovering) openAccount(reloadAccount,'password');
+supabase.auth.onAuthStateChange(event=>{
+  if(event==='SIGNED_OUT') setTimeout(async ()=>{
+    try {
+      await refreshAccount();
+      if(!user) await reloadAccount();
+    } catch(error) { status(error.message); }
+  },0);
 });
 
 }

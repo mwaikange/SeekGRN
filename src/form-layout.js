@@ -12,7 +12,7 @@ export function readProfileSlots(pages,type='application') {
  yes('disability',0,258,245,312);
  ['convicted','pending','dismissed','boarded'].forEach((k,i)=>yes(k,0,[214,201,189,176][i],573,504));
  [['ministry',208,128,150],['station',430,128,150],['designation',117,117,240],['grade',408,117,172],['appointment',251,106,300],['scale',111,95,246],['notch',428,95,150]].forEach(([k,x,y,w])=>set(k,0,x,y,w));
- p.employmentType=p.ministry?'Yes':'No';
+ if(p.ministry){p.employmentType='Yes';yes('probation',0,82,305,380);}
  p.languages=[];
  for(let i=0;i<6;i++){const x=130+i*75;const row={language:i?at(1,x,724,70):'English'};['speak','read','write'].forEach((k,j)=>row[k]=at(1,x,711-j*13,70));if(row.speak||row.read||row.write)p.languages.push(row);}
  if(!p.languages.length)delete p.languages;
