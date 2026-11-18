@@ -20,6 +20,10 @@ const pages={
         "Check each vacancy against the official circular. Automated PDF extraction may miss or misread information. Review every generated form, sign where required, and deliver the required documents to the office in the circular before its deadline. You remain responsible for accuracy, eligibility and submission."
       ],
       [
+        "Subscriptions and preparation allowances",
+        "Each account receives one free application preparation. A preparation includes the employment form and health questionnaire for one vacancy; regenerating or downloading the same pack does not use another allowance. Monthly costs N$50 for 20 preparations per month. Biannually costs N$240 upfront for six months, with 30 preparations per month. Annually costs N$360 upfront for twelve months, with unlimited preparations. Monthly allowances reset on the subscription anniversary and do not roll over. A package activates after payment confirmation; renewals and package changes start after the current paid term. Administrators have free unlimited access. Removing documents does not restore used allowances. Contact support about billing questions and applicable cancellation or refund rights."
+      ],
+      [
         "Acceptable use",
         "Do not impersonate others, access accounts without permission, upload malicious content, misuse verification messages, interfere with the service or publish confidential information without authority. We may restrict access to address misuse or protect accounts. Contact support to query an access restriction."
       ],
@@ -56,6 +60,10 @@ const pages={
       [
         "Why we use information",
         "We use account information to authenticate you and protect access, applicant details to save your profile and prepare forms, and support messages to resolve enquiries or removal requests. We process information to provide the service you request, with your permission for optional details you submit, and where necessary for security or legal obligations. We do not automatically submit applications to employers and do not sell applicant data or use it for advertising profiles."
+      ],
+      [
+        "Subscription and payment records",
+        "We process your chosen package, payment amount, invoice reference, transaction confirmation, town and preparation usage to manage subscription access and prevent duplicate charges or misuse. Your verified email and mobile number are used to request a secure payment link by SMS. We retain necessary payment and usage records for account administration, reconciliation, disputes and legal obligations. Clearing applicant documents does not clear payment records or reset usage."
       ],
       [
         "Storage and sessions",

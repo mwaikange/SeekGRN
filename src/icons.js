@@ -1,4 +1,5 @@
 const paths = {
+  subscription:'<rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M7 15h3m4 0h3M8 3v4m8-4v4"/>',
   mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 6 9 7 9-7"/>',
   phone:'<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4"/>',
   google:'<path stroke="#4285f4" stroke-width="3" d="M21 12h-9m9 0c0 6-6 10-11 8"/><path stroke="#34a853" stroke-width="3" d="M10 20c-4-1-6-4-6-8"/><path stroke="#fbbc05" stroke-width="3" d="M4 12c0-3 1-5 3-7"/><path stroke="#ea4335" stroke-width="3" d="M7 5c4-3 9-3 12 1"/>',

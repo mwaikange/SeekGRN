@@ -74,3 +74,7 @@ The endpoint validates input and same-origin requests, has a honeypot and best-e
 7. Test Google signup and return to the app. The provider-confirmed email should show a check mark. Complete the mobile SMS OTP step. Check that the same Auth user owns both verified contacts. Publish the Google consent app when ready to allow public users.
 
 [Official Supabase Google setup](https://supabase.com/docs/guides/auth/social-login/auth-google)
+
+## Subscriptions and PaySME payments
+
+See [SUBSCRIPTIONS_SETUP.md](SUBSCRIPTIONS_SETUP.md). Apply scripts/subscriptions.sql to preserve existing packs and enable server-enforced allowances, configure the PaySME merchant/server variables privately in Vercel, and register https://seek-grn.vercel.app/api/paysme-webhook in the merchant portal. SMS requests remain pending until the signed paid webhook activates a package.

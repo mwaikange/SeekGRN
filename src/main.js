@@ -7,6 +7,8 @@ import {connect,supabase,user,isAdmin,refreshAccount} from './backend.js';
 import {openAccount,registrationPending} from './auth.js';
 import {legalPage} from './legal.js';
 import {removalPage,submitRemoval} from './removal.js';
+import {subscriptionPage,mountSubscription,subscriptionStatus,savePreparedPack} from './subscription.js';
+import {preparationAvailable} from './subscription-plans.js';
 
 async function initialize() {
 let recovering = false;
@@ -23,7 +25,7 @@ const state = {
   documents: await get('documents') ?? [], circular: await get('circular'),
   admin: isAdmin, query: '', org: '', station: '', selected: '', notice: '', jobStatus: '', pending: null
 };
-let cachedPdf, cachedPdfUrl, closeViewer;
+let cachedPdf, cachedPdfUrl, closeViewer, closeSubscription;
 const intentKey='seekgrn-action';
 function requireAccount(intent) {
   if(user&&!registrationPending()) return true;
@@ -36,7 +38,7 @@ async function resumeAction() {
   sessionStorage.removeItem(intentKey);
   if(!intent)return;
   if(intent.type==='prepare')await prepare(intent.id);
-  else if(['profile','documents','circular'].includes(intent.view))go(intent.view);
+  else if(['profile','documents','circular','subscription'].includes(intent.view))go(intent.view);
 }
 function circularLink(circular) {
   if (cachedPdf !== circular.pdf) {
@@ -63,7 +65,7 @@ retireCircular();
 function shell(content) {
   return '<a class="skip" href="#main">Skip to content</a><header class="mast '+(state.view==='browse'?'home-mast':'')+'"><div class="wrap mast-inner">'+
     '<a class="brand" href="#browse"><span class="brand-icon">'+icon('briefcase',23)+'</span><span>Seek<span class="brand-grn">GRN</span>Jobs<small>NAMIBIA PUBLIC SERVICE VACANCIES</small></span></a>'+
-    (user&&!registrationPending()?'<nav class="app-nav" aria-label="Main navigation">'+nav.map(navLink).join('')+(state.admin?navLink(['admin','shield','Admin']):'')+'</nav>':'')+
+    (user&&!registrationPending()?'<nav class="app-nav" aria-label="Main navigation">'+nav.map(navLink).join('')+(state.admin?navLink(['admin','shield','Admin']):navLink(['subscription','subscription','Subscription']))+'</nav>':'')+
     action(user?'My account':'Sign in','account','user','button quiet mast-action')+'</div></header>'+
     '<main id="main">'+content+'<p id="notice" role="status" class="notice wrap" '+(state.notice?'':'hidden')+'>'+escape(state.notice)+'</p></main>'+
     '<footer class="wrap footer"><div><a class="footer-brand" href="#browse">SeekGRNJobs</a><p>Independent application preparation tool for Namibia’s Public Service.</p><nav class="footer-legal" aria-label="Legal"><a href="#terms">Terms of Service</a><span aria-hidden="true">|</span><a href="#privacy">Privacy Policy</a><span aria-hidden="true">|</span><a href="/request-account-removal">Account Removal</a></nav><p><a href="mailto:support@paysme.site">support@paysme.site</a> · <a href="tel:+264836795150">+264 83 679 5150</a></p><p class="footer-owner">Owned &amp; Managed by Mwai PaySME Solutions cc</p></div></footer>';
@@ -180,13 +182,14 @@ async function reloadAccount() {
   sessionStorage.removeItem('seekgrn-registration');
   document.querySelector('.auth-sheet')?.close();
   state.view='browse';state.profile=fields.blankProfile();state.documents=[];
-  state.admin=false;state.notice='';state.circularDraft=undefined;state.pending=null;
+  state.admin=false;state.notice='';state.circularDraft=undefined;state.pending=null;state.subscription=null;
   history.replaceState(null,'','/#browse');render();window.scrollTo(0,0);return;
  }
  state.profile={...fields.blankProfile(),...await get('profile')};
  state.documents=await get('documents')??[];
  state.admin=isAdmin;state.notice='';
- if(state.view==='admin'&&!isAdmin)state.view='browse';
+ if((state.view==='admin'&&!isAdmin)||(state.view==='subscription'&&isAdmin))state.view='browse';
+ state.subscription=null;
  render();
 }
 function signInPrompt() {return '<section class="wrap"><div class="empty panel"><h1>Your application workspace</h1><p>Sign in to save your profile and access your forms across devices.</p>'+action('Sign in or register','account','user','button primary')+'</div></section>';}
@@ -195,11 +198,12 @@ function circular() {
   return '<section class="wrap">'+sectionHeading('OFFICIAL CIRCULAR',state.circular.title,'Read the circular here, then return to vacancies to prepare your forms.')+'<a class="button secondary" href="#browse">Back to vacancies</a><div id="circular-viewer" class="pdf-reader" aria-label="Official circular"><p role="status">Loading circular…</p></div></section>';
 }
 function render() {
-  closeViewer?.();closeViewer=undefined;
+  closeViewer?.();closeViewer=undefined;closeSubscription?.();closeSubscription=undefined;
   document.body.classList.toggle('home-screen',state.view==='browse');
   document.body.classList.toggle('has-app-nav',Boolean(user&&!registrationPending()));
-  root.innerHTML=shell(({browse,profile,documents,admin,circular,terms:()=>legalPage('terms'),privacy:()=>legalPage('privacy'),removal:()=>removalPage(user)})[state.view]());
+  root.innerHTML=shell(({browse,profile,documents,admin,circular,subscription:subscriptionPage,terms:()=>legalPage('terms'),privacy:()=>legalPage('privacy'),removal:()=>removalPage(user)})[state.view]());
   root.querySelector('#removal-form')?.addEventListener('submit',submitRemoval);
+  if(state.view==='subscription'&&user&&!isAdmin)closeSubscription=mountSubscription(root.querySelector('.subscription-page'),s=>{state.subscription=s;});
   renderJobs();
   if(state.view==='circular'&&user&&!registrationPending()) {
     const container=root.querySelector('#circular-viewer');
@@ -212,10 +216,10 @@ function render() {
 function navigate() {
   if(location.hash==='#main') return;
   const target=location.hash.slice(1)||(location.pathname==='/request-account-removal'?'removal':'browse');
-  if(['profile','documents','circular'].includes(target)&&!requireAccount({view:target})) {
+  if(['profile','documents','circular','subscription'].includes(target)&&!requireAccount({view:target})) {
     history.replaceState(null,'',location.pathname+location.search+'#browse');state.view='browse';render();return;
   }
-  state.view=target==='admin'&&state.admin?'admin':[...nav.map(([id])=>id),'circular','terms','privacy','removal'].includes(target)?target:'browse';
+  state.view=target==='subscription'&&state.admin?'browse':target==='subscription'?'subscription':target==='admin'&&state.admin?'admin':[...nav.map(([id])=>id),'circular','terms','privacy','removal'].includes(target)?target:'browse';
   render();
   window.scrollTo(0,0);
 }
@@ -247,13 +251,18 @@ async function prepare(jobId) {
   if (!job) return;
   state.pending=jobId; state.jobStatus='Loading…'; renderJobs();
   try {
+    if(!state.admin&&!prepared(jobId)){
+      state.subscription=await subscriptionStatus();
+      if(user?.id!==applicantId)return;
+      if(!preparationAvailable(state.subscription)){state.notice='Your preparation allowance is used. Choose a subscription to prepare more forms.';go('subscription');return;}
+    }
     const {prepareForms}=await import('./pdf.js');
     state.jobStatus='Filling forms…'; renderJobs();
     const bundle=await prepareForms(profile,job,circular);
     if(user?.id!==applicantId) return;
     if (expired(circular)) throw new Error('This vacancy has closed.');
-    const documents=[bundle,...state.documents.filter(item=>item.jobId!==jobId)];
-    await put('documents',documents);
+    const saved=await savePreparedPack(bundle);
+    const documents=saved.documents;state.subscription=saved.subscription;
     if(user?.id!==applicantId) return;
     state.documents=documents;
     status('Application and health forms completed.');

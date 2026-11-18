@@ -46,6 +46,7 @@ export function openAccount(onChange,initial='login',onSuccess=()=>{}){
   if(mode==='account'){
    content+='<div class="account-details"><p>'+safe(user?.email||'Email not added')+'</p><p>'+safe(user?.phone||'Mobile not added')+'</p></div>';
    if(!verifiedContacts(user))content+='<button class="button primary" data-mode="contacts">Complete contact verification '+icon('arrow')+'</button>';
+   if(!isAdmin)content+='<a class="button secondary account-subscription" href="#subscription">'+icon('subscription')+'Subscription</a>';
    content+='<button class="button secondary" id="signout">Sign out</button>';
   }else{
    if(login||signup)content+='<div class="auth-tabs" role="group" aria-label="Sign-in method"><button type="button" data-method="email" aria-pressed="'+(method==='email')+'">'+icon('mail')+'Email</button><button type="button" data-method="mobile" aria-pressed="'+(method==='mobile')+'">'+icon('phone')+'Mobile</button></div>';
@@ -68,6 +69,7 @@ export function openAccount(onChange,initial='login',onSuccess=()=>{}){
   }
   dialog.dataset.mode=mode;
   dialog.innerHTML='<button type="button" class="button quiet sheet-close" aria-label="Close">'+icon('close')+'</button><div class="sheet-handle" aria-hidden="true"></div><div class="sheet-inner"><div class="sheet-content"><h2 id="auth-title">'+titles[mode]+'</h2><p id="auth-message" role="status" aria-live="polite">'+safe(info)+'</p>'+content+'</div><p class="sheet-legal">By using the SeekGRNJobs app you agree to our <a href="#terms" data-legal>Terms of Service</a> &amp; <a href="#privacy" data-legal>Privacy Policy</a></p></div>';
+  dialog.querySelector('.account-subscription')?.addEventListener('click',()=>dialog.close());
   dialog.querySelector('.sheet-close').onclick=()=>{if(!busy)dialog.close();};
   dialog.querySelectorAll('[data-legal]').forEach(link=>link.onclick=event=>{if(busy)event.preventDefault();else dialog.close();});
   dialog.querySelectorAll('[data-mode]').forEach(button=>button.onclick=()=>{if(busy)return;capture();mode=button.dataset.mode;draw();});
