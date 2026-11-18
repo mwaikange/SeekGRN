@@ -1,0 +1,4 @@
+# Auth calls this endpoint with a signed Standard Webhooks request, not a JWT.
+# The handler rejects requests unless the hook signature is valid.
+[functions.smsportal-otp]
+verify_jwt = false

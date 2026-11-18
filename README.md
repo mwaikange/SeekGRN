@@ -1,5 +1,7 @@
 # SeekGRNJobs
 
+For the current super-admin SQL, email OTP templates, SMSPortal hook deployment and Google/Apple setup, follow [SETUP.md](SETUP.md). The existing administrator account is preserved. Registration verifies email first, then attaches and verifies the mobile number on the same Auth user.
+
 SeekGRNJobs helps applicants browse official Namibian Public Service vacancies and prepare form 156043 and health questionnaire 156094. Applicants review, sign and submit their forms through the office specified in the circular.
 
 ## Run locally

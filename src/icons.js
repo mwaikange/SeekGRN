@@ -1,4 +1,8 @@
 const paths = {
+  mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 6 9 7 9-7"/>',
+  phone:'<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4"/>',
+  google:'<path stroke="#4285f4" stroke-width="3" d="M21 12h-9m9 0c0 6-6 10-11 8"/><path stroke="#34a853" stroke-width="3" d="M10 20c-4-1-6-4-6-8"/><path stroke="#fbbc05" stroke-width="3" d="M4 12c0-3 1-5 3-7"/><path stroke="#ea4335" stroke-width="3" d="M7 5c4-3 9-3 12 1"/>',
+  apple:'<path fill="currentColor" stroke="none" d="M16.5 2c.1 1.5-.5 2.7-1.3 3.6-.9.9-2.1 1.6-3.4 1.5-.2-1.4.5-2.7 1.3-3.5.9-1 2.3-1.7 3.4-1.6ZM20 17.1c-.5 1.2-.8 1.7-1.5 2.8-.9 1.3-2.1 2.9-3.6 2.9-1.3 0-1.7-.8-3.5-.8-1.8 0-2.3.8-3.6.8-1.5 0-2.6-1.4-3.5-2.7C1.8 16.5 1 11.7 2.6 9.2c1.1-1.8 2.8-2.8 4.5-2.8 1.4 0 2.6.9 3.5.9.9 0 2.4-1.1 4-1 1.4.1 2.7.8 3.6 1.9-3.2 1.8-2.7 6.2.8 7.5l1 .4Z"/>',
   briefcase:'<rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V4h8v3M3 13h18m-11-1v3h4v-3"/>',
   grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
   user:'<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/>',
