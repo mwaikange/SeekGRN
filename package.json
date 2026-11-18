@@ -12,7 +12,8 @@
   "dependencies": {
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "4.10.38",
-    "@supabase/supabase-js": "2.119.0"
+    "@supabase/supabase-js": "2.119.0",
+    "nodemailer": "10.6.0"
   },
   "devDependencies": {
     "vite": "6.4.3"

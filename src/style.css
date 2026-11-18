@@ -220,7 +220,7 @@ html{scroll-padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
 .pdf-controls input{width:65px;padding:8px;border:1px solid var(--line);border-radius:6px}
 .pdf-reader canvas{display:block;max-width:100%;height:auto;margin:auto;background:white}
 .pdf-reader [role=status]{font-size:13px}
-@media(max-width:1050px){body.home-screen{padding-bottom:0}.home-mast .mast-inner{justify-content:space-between}.home-mast .mast-action{margin-left:auto}}
+@media(max-width:1050px){body.home-screen:not(.has-app-nav){padding-bottom:0}.home-mast .mast-inner{justify-content:space-between}.home-mast .mast-action{margin-left:auto}}
 @media(max-width:560px){.pdf-controls .button{padding:8px;font-size:12px}}
 @media(prefers-reduced-motion:reduce){.auth-sheet{animation:none}}
 
@@ -245,3 +245,14 @@ html{scroll-padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
  .form-footer{flex-wrap:wrap}
  .auth-sheet{padding-inline:16px}
 }
+
+.verification-steps{display:grid;grid-template-columns:1fr 1fr;gap:10px;list-style:none;padding:0;margin:0 0 12px}
+.verification-steps li{display:flex;align-items:center;gap:8px;color:#c1ccb7;font-size:12px;font-weight:700;min-width:0}
+.verification-circle{display:grid;place-items:center;flex:none;width:28px;height:28px;border:1px solid #7a8d65;border-radius:50%;font-size:12px}
+.verification-steps .verified{color:#deedb3}.verification-steps .verified .verification-circle{background:#c4d39e;border-color:#c4d39e;color:#142a13}
+.verification-steps small{display:block;font-size:10px;line-height:14px;font-weight:400}
+.auth-sheet .verified-contact{display:flex;align-items:center;gap:6px;color:#deedb3;font-size:12px;overflow-wrap:anywhere;min-width:0}
+.auth-sheet[data-mode=contacts] form>p,.auth-sheet[data-mode=complete] form>p{font-size:12px;line-height:1.4;margin:0 0 4px;color:#cfdbc0}
+.auth-spinner{display:inline-block;width:15px;height:15px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:auth-spin .8s linear infinite}
+@keyframes auth-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.auth-spinner{animation:none}}

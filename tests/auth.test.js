@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {namibianPhone,verifiedContacts,registerAccount,sendPhoneCode,verifyContact} from '../src/auth-service.js';
+import {namibianPhone,verifiedContacts,registerAccount,sendPhoneCode,verifyContact,contactProgress,continueContactVerification} from '../src/auth-service.js';
 import {smsPortalHandler} from '../supabase/functions/smsportal-otp/handler.js';
 
 test('normalises Namibian contacts without duplicating the fixed country prefix',()=>{
@@ -19,10 +19,42 @@ test('failed or duplicate signup cannot proceed to phone verification',async()=>
  await assert.rejects(registerAccount({signUp:async()=>({error:new Error('Rate limit')})},details),/Rate limit/);
  await assert.rejects(registerAccount({signUp:async()=>({data:{user:{identities:[]}}})},details),/Sign in/);
 });
-test('phone verification attaches to the signed-in identity and fails when SMS is disabled',async()=>{
+test('phone verification calls Auth even when the cached provider flag is false or missing',async()=>{
  const calls=[];const auth={updateUser:async value=>{calls.push(value);return {};}};
- await assert.rejects(sendPhoneCode(auth,'818083704',false),/awaiting activation/);assert.equal(calls.length,0);
- assert.equal(await sendPhoneCode(auth,'0818083704',true),'+264818083704');assert.deepEqual(calls,[{phone:'+264818083704'}]);
+ assert.equal(await sendPhoneCode(auth,'818083704',false),'+264818083704');
+ assert.equal(await sendPhoneCode(auth,'0818083704'),'+264818083704');assert.deepEqual(calls,[{phone:'+264818083704'},{phone:'+264818083704'}]);
+ await assert.rejects(sendPhoneCode({updateUser:async()=>({error:new Error('Phone sign-in disabled by server')})},'818083704'),/disabled by server/);
+});
+
+test('provider-confirmed email skips email OTP and sends only the mobile challenge',async()=>{
+ const account={id:'one',email:'example@example.com',email_confirmed_at:'today',app_metadata:{provider:'google'}};
+ const calls=[];const auth={updateUser:async value=>{calls.push(value);return {};},signInWithOtp:()=>assert.fail('verified email must not receive another OTP')};
+ const result=await continueContactVerification(auth,account,{email:account.email,phone:'0818083704'});
+ assert.deepEqual(contactProgress(account),{email:true,mobile:false,next:'mobile'});
+ assert.deepEqual(result.challenge,{phone:'+264818083704',type:'phone_change'});assert.deepEqual(calls,[{phone:'+264818083704'}]);
+});
+
+test('email confirmation progresses to SMS and an SMS failure never restarts email verification',async()=>{
+ const account={id:'one',email:'example@example.com'};let emails=0,sms=0;
+ const auth={signInWithOtp:async()=>{emails++;return {};},updateUser:async()=>{sms++;return {error:new Error('SMS hook unavailable')};}};
+ assert.equal((await continueContactVerification(auth,account,{email:account.email,phone:'818083704'})).challenge.type,'email');
+ account.email_confirmed_at='today';
+ await assert.rejects(continueContactVerification(auth,account,{email:account.email,phone:'818083704'}),/SMS hook unavailable/);
+ await assert.rejects(continueContactVerification(auth,account,{email:account.email,phone:'818083704'}),/SMS hook unavailable/);
+ assert.equal(emails,1);assert.equal(sms,2);
+});
+
+test('verified accounts finish without more messages and editable provider metadata cannot verify an email',async()=>{
+ const account={id:'one',email:'example@example.com',phone:'264818083704',email_confirmed_at:'today',phone_confirmed_at:'today'};
+ assert.deepEqual(await continueContactVerification({},account,{phone:'+264818083704'}),{complete:true});
+ assert.equal(contactProgress(account,'811111111').mobile,false);
+ assert.equal(contactProgress({...account,email_confirmed_at:undefined,user_metadata:{email_verified:true,provider:'apple'}}).next,'email');
+ await assert.rejects(continueContactVerification({},null,{}),/Sign in again/);
+});
+
+test('mobile-only accounts add and verify an email on the same user before the next step',async()=>{
+ let call;const result=await continueContactVerification({updateUser:async value=>{call=value;return {}; }},{id:'one',phone:'264818083704',phone_confirmed_at:'today'},{email:'example@example.com',phone:'+264818083704'});
+ assert.deepEqual(call,{email:'example@example.com'});assert.deepEqual(result.challenge,{email:'example@example.com',type:'email_change'});
 });
 test('verification rejects a swapped identity and never treats contact metadata as proof',async()=>{
  let signedOut=false;

@@ -63,7 +63,7 @@ retireCircular();
 function shell(content) {
   return '<a class="skip" href="#main">Skip to content</a><header class="mast '+(state.view==='browse'?'home-mast':'')+'"><div class="wrap mast-inner">'+
     '<a class="brand" href="#browse"><span class="brand-icon">'+icon('briefcase',23)+'</span><span>Seek<span class="brand-grn">GRN</span>Jobs<small>NAMIBIA PUBLIC SERVICE VACANCIES</small></span></a>'+
-    (user&&state.view!=='browse'?'<nav class="app-nav" aria-label="Main navigation">'+nav.map(navLink).join('')+'</nav>':'')+
+    (user&&!registrationPending()?'<nav class="app-nav" aria-label="Main navigation">'+nav.map(navLink).join('')+(state.admin?navLink(['admin','shield','Admin']):'')+'</nav>':'')+
     action(user?'My account':'Sign in','account','user','button quiet mast-action')+'</div></header>'+
     '<main id="main">'+content+'<p id="notice" role="status" class="notice wrap" '+(state.notice?'':'hidden')+'>'+escape(state.notice)+'</p></main>'+
     '<footer class="wrap footer"><div><a class="footer-brand" href="#browse">SeekGRNJobs</a><p>Independent application preparation tool for Namibia’s Public Service.</p><nav class="footer-legal" aria-label="Legal"><a href="#terms">Terms of Service</a><a href="#privacy">Privacy Policy</a><a href="/request-account-removal">Request Account Removal</a></nav><p><a href="mailto:support@paysme.site">support@paysme.site</a> · <a href="tel:+264836795150">+264 83 679 5150</a></p><p class="footer-owner">Owned &amp; Managed by Mwai PaySME Solutions cc</p></div></footer>';
@@ -197,7 +197,7 @@ function circular() {
 function render() {
   closeViewer?.();closeViewer=undefined;
   document.body.classList.toggle('home-screen',state.view==='browse');
-  document.body.classList.toggle('has-app-nav',Boolean(user&&state.view!=='browse'));
+  document.body.classList.toggle('has-app-nav',Boolean(user&&!registrationPending()));
   root.innerHTML=shell(({browse,profile,documents,admin,circular,terms:()=>legalPage('terms'),privacy:()=>legalPage('privacy'),removal:()=>removalPage(user)})[state.view]());
   root.querySelector('#removal-form')?.addEventListener('submit',submitRemoval);
   renderJobs();

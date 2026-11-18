@@ -26,8 +26,10 @@ export async function connect() {
  try {
   const url=import.meta.env.VITE_SUPABASE_URL || 'https://dmrtrkhjlarjzhaxyflf.supabase.co';
   const key=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_zWaAa_AY_6HO8d3PDLRw2Q_tMk6OrmD';
-  providers=(await (await fetch(url+'/auth/v1/settings',{headers:{apikey:key}})).json()).external||{};
- } catch { providers={email:true}; }
+  const response=await fetch(url+'/auth/v1/settings',{headers:{apikey:key},signal:AbortSignal.timeout(5000)});
+  if(!response.ok)throw new Error('Unable to read sign-in methods.');
+  providers={email:true,...(await response.json()).external};
+ } catch { providers={email:true,phone:null}; }
 }
 export async function encode(value) {
  if(value instanceof Blob) {

@@ -1,150 +1,184 @@
 import {supabase,user,isAdmin,providers,refreshAccount} from './backend.js';
 import {icon} from './icons.js';
-import {namibianPhone,registerAccount,sendPhoneCode,verifyContact,verifiedContacts} from './auth-service.js';
+import {namibianPhone,registerAccount,verifyContact,verifiedContacts,contactProgress,continueContactVerification} from './auth-service.js';
 
-const safe = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const pendingKey = 'seekgrn-registration';
-function pendingRegistration() {try {return JSON.parse(sessionStorage.getItem(pendingKey)) || {};} catch {return {};}}
-export function registrationPending() {return Boolean(user && !isAdmin && (!verifiedContacts(user) || pendingRegistration().oauth));}
+const safe = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pendingKey='seekgrn-registration';
+function pendingRegistration(){try{return JSON.parse(sessionStorage.getItem(pendingKey))||{};}catch{return {};}}
+export function registrationPending(){return Boolean(user&&!isAdmin&&!verifiedContacts(user));}
 
-export function openAccount(onChange, initial='login', onSuccess=()=>{}) {
- if(document.querySelector('.auth-sheet')) return;
- const pending = pendingRegistration();
- let mode = initial==='password'?'password':user?(initial==='contacts'?'contacts':'account'):initial;
- let method='email', email=user?.email || pending.email || '', phone=user?.phone || pending.phone || user?.user_metadata?.contact_phone || '';
- let challenge, afterVerify, expectedUserId, busy=false, resendAt=0;
- const dialog=document.createElement('dialog'); dialog.className='auth-sheet';
- dialog.setAttribute('aria-labelledby','auth-title'); document.body.append(dialog); document.body.classList.add('sheet-open');
- const message = text => {const node=dialog.querySelector('#auth-message'); if(node)node.textContent=text;};
- const remember = extra => sessionStorage.setItem(pendingKey,JSON.stringify({email,phone,...extra}));
- const phoneField = () => '<label class="field"><span>Mobile number</span><span class="phone-input"><span class="phone-prefix">+264</span><input name="phone" aria-label="Mobile number" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="81 234 5678" value="'+safe(phone.replace(/^\+?264/,''))+'" required></span></label>';
- const emailField = (readonly=false) => '<label class="field"><span>Email address</span><input name="email" type="email" autocomplete="email" value="'+safe(email)+'" '+(readonly?'readonly':'')+' required></label>';
- const passwordField = () => '<label class="field"><span>Password</span><input name="password" type="password" autocomplete="'+(mode==='login'?'current-password':'new-password')+'" minlength="8" required></label>';
- function draw(info='') {
+export function openAccount(onChange,initial='login',onSuccess=()=>{}){
+ if(document.querySelector('.auth-sheet'))return;
+ const pending=pendingRegistration();
+ let mode=initial==='password'?'password':user?(initial==='contacts'&&!verifiedContacts(user)?'contacts':'account'):initial;
+ let method='email',email=user?.email||pending.email||'',phone=user?.phone||pending.phone||user?.user_metadata?.contact_phone||'';
+ let challenge,afterVerify,expectedUserId=user?.id||pending.userId,busy=false,busyLabel='',resendAt=0;
+ const dialog=document.createElement('dialog');dialog.className='auth-sheet';dialog.setAttribute('aria-labelledby','auth-title');
+ document.body.append(dialog);document.body.classList.add('sheet-open');
+ const message=text=>{const node=dialog.querySelector('#auth-message');if(node)node.textContent=text;};
+ const remember=()=>sessionStorage.setItem(pendingKey,JSON.stringify({email,phone,userId:user?.id||expectedUserId}));
+ const phoneField=()=>'<label class="field"><span>Mobile number</span><span class="phone-input"><span class="phone-prefix">+264</span><input name="phone" aria-label="Mobile number" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="81 234 5678" value="'+safe(phone.replace(/^\+?264/,''))+'" required></span></label>';
+ const emailField=(readonly=false)=>'<label class="field"><span>Email address</span><input name="email" type="email" autocomplete="email" value="'+safe(email)+'" '+(readonly?'readonly':'')+' required></label>';
+ const passwordField=()=>'<label class="field"><span>Password</span><input name="password" type="password" autocomplete="'+(mode==='login'?'current-password':'new-password')+'" minlength="8" required></label>';
+ function progress(){
+  const state=contactProgress(user,phone);
+  return '<ol class="verification-steps" aria-label="Contact verification">'+[['email','Email'],['mobile','Mobile']].map(([key,label],index)=>'<li class="'+(state[key]?'verified':'')+'"><span class="verification-circle" aria-hidden="true">'+(state[key]?icon('check',14):index+1)+'</span><span>'+label+'<small>'+(state[key]?'Verified':'Not verified')+'</small></span></li>').join('')+'</ol>';
+ }
+ function syncBusy(){
+  dialog.setAttribute('aria-busy',String(busy));
+  dialog.querySelectorAll('button').forEach(button=>button.disabled=busy||Boolean(button.dataset.provider&&!providers[button.dataset.provider]));
+  const submit=dialog.querySelector('#auth-submit');
+  if(submit)submit.innerHTML=busy?'<span class="auth-spinner" aria-hidden="true"></span>'+safe(busyLabel):safe(submit.dataset.label)+icon('arrow');
+  const resend=dialog.querySelector('#resend');
+  if(resend){
+   const seconds=Math.max(0,Math.ceil((resendAt-Date.now())/1000));
+   resend.disabled=busy||seconds>0;resend.textContent=busy&&busyLabel==='Resending code…'?'Resending…':seconds?'Resend in '+seconds+'s':'Resend code';
+  }
+  const signout=dialog.querySelector('#signout');if(signout)signout.textContent=busy?'Signing out…':'Sign out';
+ }
+ function setBusyLabel(label){busyLabel=label;syncBusy();}
+ function draw(info=''){
   const signup=mode==='signup',login=mode==='login',verify=mode==='verify',contacts=mode==='contacts';
-  const titles={login:'Welcome back.',signup:'Create your account.',forgot:'Reset your password.',verify:'Check your '+(challenge?.phone?'mobile.':'email.'),password:'Choose a new password.',contacts:'Complete your account.',account:'Your account.'};
+  const state=contactProgress(user,phone);
+  const titles={login:'Welcome back.',signup:'Create your account.',forgot:'Reset your password.',verify:challenge?.phone?'Check your SMS.':'Check your email.',password:'Choose a new password.',contacts:state.email?'Verify your mobile.':'Verify your email.',account:'Your account.',complete:'Account verified.'};
   let content='';
-  if(mode==='account') content='<div class="account-details"><p>'+safe(user?.email || 'Email not added')+'</p><p>'+safe(user?.phone || 'Mobile number not verified')+'</p><span class="tag">'+(verifiedContacts(user)?'Both contacts verified':'Contact verification pending')+'</span></div>'+(isAdmin?'<a class="button secondary" href="#admin" data-legal>'+icon('upload')+' Manage PSM circular</a>':'')+'<button class="button primary" data-mode="contacts">'+icon('shield')+' Verify contact details</button><button class="button secondary" id="signout">Sign out</button>';
-  else {
-   if(login||signup) content+='<div class="auth-tabs" role="group" aria-label="Sign-in method"><button type="button" data-method="email" aria-pressed="'+(method==='email')+'">'+icon('mail')+'Email</button><button type="button" data-method="mobile" aria-pressed="'+(method==='mobile')+'">'+icon('phone')+'Mobile</button></div>';
+  if(contacts||mode==='complete'||mode==='account'||(verify&&afterVerify==='contacts'))content+=progress();
+  if(mode==='account'){
+   content+='<div class="account-details"><p>'+safe(user?.email||'Email not added')+'</p><p>'+safe(user?.phone||'Mobile not added')+'</p></div>';
+   if(!verifiedContacts(user))content+='<button class="button primary" data-mode="contacts">Complete contact verification '+icon('arrow')+'</button>';
+   content+='<button class="button secondary" id="signout">Sign out</button>';
+  }else{
+   if(login||signup)content+='<div class="auth-tabs" role="group" aria-label="Sign-in method"><button type="button" data-method="email" aria-pressed="'+(method==='email')+'">'+icon('mail')+'Email</button><button type="button" data-method="mobile" aria-pressed="'+(method==='mobile')+'">'+icon('phone')+'Mobile</button></div>';
    content+='<form id="auth-form">';
-   if(verify) content+='<p>Enter the code sent to <strong>'+safe(challenge.phone || challenge.email)+'</strong>.</p><label class="field"><span>Verification code</span><input name="token" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" required autofocus></label>';
-   else if(mode==='password') content+=passwordField();
-   else if(contacts) content+='<p>Verify your email and mobile number to finish registration. Both contacts stay on this account.</p>'+emailField(Boolean(user?.email))+phoneField();
-   else if(mode==='forgot') content+=emailField();
-   else if(signup) content+=emailField()+'<div class="auth-pair">'+phoneField()+passwordField()+'</div><p class="auth-hint">Verify email first, then mobile by SMS.</p>';
+   if(verify)content+='<p>Enter the '+(challenge.phone?'SMS':'email')+' code sent to <strong>'+safe(challenge.phone||challenge.email)+'</strong>.</p><label class="field"><span>Verification code</span><input name="token" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" required autofocus></label>';
+   else if(mode==='password')content+=passwordField();
+   else if(mode==='complete')content+='<p>Your email and mobile number are verified. Your account is ready.</p>';
+   else if(contacts){
+    content+='<p>'+(state.email?'Your email is already verified. Send an SMS code to confirm your mobile number.':'Confirm your email first. We will then send the verification code to your mobile.')+'</p>';
+    content+=state.email?'<p class="verified-contact">'+icon('check',16)+' '+safe(user.email)+'</p>':emailField(Boolean(user?.email));
+    content+=phoneField();
+   }else if(mode==='forgot')content+='<p>Enter your account email to receive a password-reset code.</p>'+emailField();
+   else if(signup)content+=emailField()+'<div class="auth-pair">'+phoneField()+passwordField()+'</div><p class="auth-hint">With email signup: email code, then SMS.</p>';
    else content+=(method==='mobile'?phoneField():emailField()+passwordField());
-   content+='<button class="button primary" type="submit">'+(signup?'Create account':verify?'Verify code':mode==='forgot'?'Send recovery code':contacts?'Continue verification':mode==='password'?'Save password':method==='mobile'?'Send SMS code':'Sign in')+icon('arrow')+'</button></form>';
-   if(verify) content+='<button class="button quiet" id="resend">Resend code</button><button class="button quiet" data-mode="'+(user?'contacts':'login')+'">Use different details</button>';
-   if(login&&method==='email') content+='<div class="auth-utilities"><button class="text-button" id="email-code">Use email code</button><button class="text-button" data-mode="forgot">Forgot password?</button></div>';
-   if(login||signup) content+='<div class="auth-divider"><span>or continue with</span></div><div class="auth-social">'+['google','apple'].map(provider=>'<button class="button secondary" data-provider="'+provider+'" '+(!providers[provider]?'disabled title="'+provider[0].toUpperCase()+provider.slice(1)+' sign-in coming soon"':'')+'>'+icon(provider,20)+provider[0].toUpperCase()+provider.slice(1)+'</button>').join('')+'</div><p class="auth-switch">'+(signup?'Already have an account?':'New to SeekGRNJobs?')+' <button class="text-button" data-mode="'+(signup?'login':'signup')+'">'+(signup?'Sign in':'Create account')+'</button></p>';
-   if(contacts&&!providers.phone) content+='<p class="auth-hint">SMS verification is awaiting activation. Your registration remains incomplete until both contacts are verified.</p>';
+   const label=signup?'Create account':verify?'Verify code':mode==='forgot'?'Send reset code':contacts?(state.email?'Send SMS code':'Send email code'):mode==='password'?'Save password':mode==='complete'?'Continue':method==='mobile'?'Send SMS code':'Sign in';
+   content+='<button id="auth-submit" class="button primary" type="submit" data-label="'+label+'">'+label+icon('arrow')+'</button></form>';
+   if(verify)content+='<div class="auth-utilities"><button type="button" class="text-button" id="resend">Resend code</button><button type="button" class="text-button" data-mode="'+(user?'contacts':'login')+'">Use different details</button></div>';
+   if(login&&method==='email')content+='<div class="auth-utilities"><button type="button" class="text-button" data-mode="forgot">Forgot password?</button></div>';
+   if(login||signup)content+='<div class="auth-divider"><span>or continue with</span></div><div class="auth-social">'+['google','apple'].map(provider=>'<button type="button" class="button secondary" data-provider="'+provider+'" '+(!providers[provider]?'disabled title="'+provider[0].toUpperCase()+provider.slice(1)+' sign-in coming soon"':'')+'>'+icon(provider,20)+provider[0].toUpperCase()+provider.slice(1)+'</button>').join('')+'</div><p class="auth-switch">'+(signup?'Already have an account?':'New to SeekGRNJobs?')+' <button type="button" class="text-button" data-mode="'+(signup?'login':'signup')+'">'+(signup?'Sign in':'Create account')+'</button></p>';
   }
   dialog.dataset.mode=mode;
   dialog.innerHTML='<button type="button" class="button quiet sheet-close" aria-label="Close">'+icon('close')+'</button><div class="sheet-handle" aria-hidden="true"></div><div class="sheet-inner"><div class="sheet-content"><h2 id="auth-title">'+titles[mode]+'</h2><p id="auth-message" role="status" aria-live="polite">'+safe(info)+'</p>'+content+'</div><p class="sheet-legal">By using the SeekGRNJobs app you agree to our <a href="#terms" data-legal>Terms of Service</a> &amp; <a href="#privacy" data-legal>Privacy Policy</a></p></div>';
-  dialog.querySelector('.sheet-close').onclick=()=>dialog.close();
-  dialog.querySelectorAll('[data-legal]').forEach(a=>a.onclick=()=>dialog.close());
+  dialog.querySelector('.sheet-close').onclick=()=>{if(!busy)dialog.close();};
+  dialog.querySelectorAll('[data-legal]').forEach(link=>link.onclick=event=>{if(busy)event.preventDefault();else dialog.close();});
   dialog.querySelectorAll('[data-mode]').forEach(button=>button.onclick=()=>{if(busy)return;capture();mode=button.dataset.mode;draw();});
   dialog.querySelectorAll('[data-method]').forEach(button=>button.onclick=()=>{if(busy)return;capture();method=button.dataset.method;draw();});
   dialog.querySelectorAll('[data-provider]').forEach(button=>button.onclick=()=>run(async()=>{
-   capture();
-   if(signup){phone=namibianPhone(phone);remember({oauth:true});}
-   const {error}=await supabase.auth.signInWithOAuth({provider:button.dataset.provider,options:{redirectTo:location.origin+location.pathname}});
-   if(error){sessionStorage.removeItem(pendingKey);throw error;}
-  }));
+   capture();remember();
+   const {error}=await supabase.auth.signInWithOAuth({provider:button.dataset.provider,options:{redirectTo:location.origin+'/'}});
+   if(error)throw error;
+  },'Opening '+button.dataset.provider+'…'));
   dialog.querySelector('#signout')?.addEventListener('click',()=>run(async()=>{
    const {error}=await supabase.auth.signOut();if(error)throw error;
    sessionStorage.removeItem(pendingKey);sessionStorage.removeItem('seekgrn-action');await refreshAccount();dialog.close();await onChange();
-  }));
-  dialog.querySelector('#email-code')?.addEventListener('click',()=>run(async()=>{
-   capture();const field=dialog.querySelector('[name="email"]');if(!field.reportValidity())return;
-   const {error}=await supabase.auth.signInWithOtp({email,options:{shouldCreateUser:false,emailRedirectTo:location.origin+location.pathname}});if(error)throw error;
-   askCode({email,type:'email'},'login');
-  }));
-  dialog.querySelector('#resend')?.addEventListener('click',()=>run(resend));
-  dialog.querySelector('#auth-form')?.addEventListener('submit',event=>{event.preventDefault();void run(()=>submit(new FormData(event.target)));});
-  if(busy)dialog.querySelectorAll('button,input').forEach(el=>el.disabled=true);
+  },'Signing out…'));
+  dialog.querySelector('#resend')?.addEventListener('click',()=>run(resend,'Resending code…'));
+  dialog.querySelector('[name=token]')?.addEventListener('input',event=>{event.target.value=event.target.value.replace(/\D/g,'');});
+  dialog.querySelector('#auth-form')?.addEventListener('submit',event=>{
+   event.preventDefault();const data=new FormData(event.currentTarget);
+   void run(()=>submit(data),mode==='verify'?'Verifying…':mode==='forgot'?'Sending reset code…':mode==='password'?'Saving password…':mode==='signup'?'Creating account…':mode==='contacts'?(state.email?'Sending SMS…':'Sending email…'):mode==='complete'?'Opening your workspace…':method==='mobile'?'Sending SMS…':'Signing in…');
+  });
+  syncBusy();
  }
- function capture() {
+ function capture(){
   const form=dialog.querySelector('form');if(!form)return;
   const values=new FormData(form);if(values.has('email'))email=String(values.get('email')).trim().toLowerCase();if(values.has('phone'))phone=String(values.get('phone'));
  }
- async function run(work) {
-  if(busy)return;busy=true;dialog.setAttribute('aria-busy','true');dialog.querySelectorAll('button').forEach(el=>el.disabled=true);
-  try{await work();}catch(error){message(error.message || 'Unable to complete this request. Try again.');}
-  finally{busy=false;dialog.removeAttribute('aria-busy');dialog.querySelectorAll('button,input').forEach(el=>el.disabled=false);dialog.querySelectorAll('[data-provider]').forEach(el=>el.disabled=!providers[el.dataset.provider]);}
+ async function run(work,label){
+  if(busy)return;busy=true;busyLabel=label;syncBusy();message(label);
+  try{await work();}
+  catch(error){message(error.message||'Unable to complete this request. Please try again.');}
+  finally{busy=false;syncBusy();}
  }
- function askCode(next,after) {challenge=next;afterVerify=after;resendAt=Date.now()+60000;mode='verify';draw();}
- async function attachPhone() {
-  mode='contacts';draw();expectedUserId=user?.id;
-  phone=await sendPhoneCode(supabase.auth,phone,providers.phone);
-  askCode({phone,type:'phone_change'},'finish');
+ function askCode(next,after){
+  challenge=next;afterVerify=after;resendAt=Date.now()+60000;mode='verify';
+  draw('Code sent. Enter it below.');
  }
- async function finish() {
+ async function nextContact(){
+  if(!user?.id)throw new Error('Sign in again to continue verification.');
+  email=user.email||email;
+  phone=phone||user.phone||user.user_metadata?.contact_phone||'';
+  expectedUserId=user.id;remember();
+  if(contactProgress(user,phone).next==='complete'){mode='complete';sessionStorage.removeItem(pendingKey);draw();await onChange();return;}
+  mode='contacts';draw();
+  // Collect a missing number before attempting delivery. Never resend email
+  // when Auth already records it as confirmed.
+  if(!phone)return;
+  setBusyLabel(contactProgress(user,phone).email?'Sending SMS…':'Sending email…');
+  const result=await continueContactVerification(supabase.auth,user,{email,phone,redirectTo:location.origin+'/'});
+  if(result.complete){mode='complete';draw();return;}
+  if(result.challenge.phone)phone=result.challenge.phone;
+  askCode(result.challenge,'contacts');
+ }
+ async function signedIn(){
   await refreshAccount();await onChange();
-  if(!verifiedContacts(user)){mode='contacts';draw('Verify both contacts to finish registration.');return;}
+  email=user?.email||email;phone=user?.phone||user?.user_metadata?.contact_phone||phone;
+  if(registrationPending()){mode='contacts';draw();return;}
   sessionStorage.removeItem(pendingKey);dialog.close();await onSuccess();
  }
- async function signedIn() {
-  await refreshAccount();await onChange();
-  if(registrationPending()){mode='contacts';email=user?.email||email;draw();return;}
-  sessionStorage.removeItem(pendingKey);dialog.close();await onSuccess();
- }
- async function submit(data) {
-  capture();const redirectTo=location.origin+location.pathname;
-  if(mode==='signup') {
+ async function submit(data){
+  capture();const redirectTo=location.origin+'/';
+  if(mode==='signup'){
    const result=await registerAccount(supabase.auth,{email,phone,password:String(data.get('password')),redirectTo});
-   email=result.email;phone=result.phone;remember({});
-   if(result.session){await refreshAccount();await onChange();await attachPhone();}
-   else askCode({email,type:'email'},'phone');
+   email=result.email;phone=result.phone;expectedUserId=result.user?.id;remember();
+   if(result.session){await refreshAccount();await nextContact();}
+   else askCode({email,type:'email'},'contacts');
    return;
   }
-  if(mode==='login') {
-   if(method==='mobile') {
-    if(!providers.phone)throw new Error('SMS sign-in is awaiting activation. Use email sign-in for now.');
-    phone=namibianPhone(phone);const {error}=await supabase.auth.signInWithOtp({phone,options:{shouldCreateUser:false}});if(error)throw error;
-    expectedUserId=undefined;askCode({phone,type:'sms'},'login');return;
+  if(mode==='login'){
+   if(method==='mobile'){
+    phone=namibianPhone(phone);const {error}=await supabase.auth.signInWithOtp({phone,options:{shouldCreateUser:false}});
+    if(error)throw error;expectedUserId=undefined;askCode({phone,type:'sms'},'login');return;
    }
-   const {error}=await supabase.auth.signInWithPassword({email,password:String(data.get('password'))});if(error)throw error;
+   const {error}=await supabase.auth.signInWithPassword({email,password:String(data.get('password'))});
+   if(error){
+    if(error.code==='email_not_confirmed'){
+     const result=await supabase.auth.resend({type:'signup',email});if(result.error)throw result.error;
+     expectedUserId=undefined;askCode({email,type:'email'},'contacts');return;
+    }
+    throw error;
+   }
    await signedIn();return;
   }
-  if(mode==='contacts') {
-   phone=namibianPhone(phone);remember({oauth:true});expectedUserId=user.id;
-   if(!user.email) {
-    const {error}=await supabase.auth.updateUser({email});if(error)throw error;
-    askCode({email,type:'email_change'},'phone');
-   } else {
-    email=user.email;
-    const {error}=await supabase.auth.signInWithOtp({email,options:{shouldCreateUser:false,emailRedirectTo:redirectTo}});if(error)throw error;
-    askCode({email,type:'email'},'phone');
-   }return;
-  }
-  if(mode==='forgot') {
+  if(mode==='contacts'){phone=namibianPhone(phone);await nextContact();return;}
+  if(mode==='forgot'){
    const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo});if(error)throw error;
    expectedUserId=undefined;askCode({email,type:'recovery'},'password');return;
   }
-  if(mode==='verify') {
+  if(mode==='verify'){
    await verifyContact(supabase.auth,challenge,String(data.get('token')),expectedUserId);
-   await refreshAccount();await onChange();
-   if(afterVerify==='phone'){await attachPhone();return;}
+   await refreshAccount();
+   if(afterVerify==='contacts'){await nextContact();return;}
    if(afterVerify==='password'){mode='password';draw();return;}
-   if(afterVerify==='finish'){await finish();return;}
    await signedIn();return;
   }
-  if(mode==='password') {
+  if(mode==='password'){
    const {error}=await supabase.auth.updateUser({password:String(data.get('password'))});if(error)throw error;
-   await signedIn();
+   await signedIn();return;
   }
+  if(mode==='complete'){sessionStorage.removeItem(pendingKey);dialog.close();await onSuccess();}
  }
- async function resend() {
-  if(Date.now()<resendAt)throw new Error('Wait '+Math.ceil((resendAt-Date.now())/1000)+' seconds before requesting another code.');
+ async function resend(){
+  if(Date.now()<resendAt)throw new Error('Please wait before requesting another code.');
   let result;
   if(challenge.type==='phone_change')result=await supabase.auth.resend({type:'phone_change',phone:challenge.phone});
   else if(challenge.type==='sms')result=await supabase.auth.signInWithOtp({phone:challenge.phone,options:{shouldCreateUser:false}});
-  else if(challenge.type==='recovery')result=await supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
-  else if(challenge.type==='email_change')result=await supabase.auth.resend({type:'email_change',email});
-  else result=afterVerify==='phone'&&!user?await supabase.auth.resend({type:'signup',email}):await supabase.auth.signInWithOtp({email,options:{shouldCreateUser:false}});
-  if(result.error)throw result.error;resendAt=Date.now()+60000;message('A new code has been sent.');
+  else if(challenge.type==='recovery')result=await supabase.auth.resetPasswordForEmail(challenge.email,{redirectTo:location.origin+'/'});
+  else if(challenge.type==='email_change')result=await supabase.auth.resend({type:'email_change',email:challenge.email});
+  else result=afterVerify==='contacts'&&!user?await supabase.auth.resend({type:'signup',email:challenge.email}):await supabase.auth.signInWithOtp({email:challenge.email,options:{shouldCreateUser:false}});
+  if(result.error)throw result.error;resendAt=Date.now()+60000;message('A new '+(challenge.phone?'SMS':'email')+' code has been sent.');
  }
- draw();dialog.addEventListener('cancel',event=>{if(busy)event.preventDefault();});dialog.addEventListener('close',()=>{document.body.classList.remove('sheet-open');dialog.remove();});dialog.showModal();
+ const timer=setInterval(()=>{if(!busy&&dialog.isConnected)syncBusy();},1000);
+ draw();dialog.addEventListener('cancel',event=>{if(busy)event.preventDefault();});
+ dialog.addEventListener('close',()=>{clearInterval(timer);document.body.classList.remove('sheet-open');dialog.remove();});
+ dialog.showModal();
 }

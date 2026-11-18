@@ -22,7 +22,7 @@ export async function submitRemoval(event) {
  button.disabled=true;status.textContent='Sending your request…';
  const values=Object.fromEntries(new FormData(form));values.consent=form.elements.consent.checked;
  try {
-  const response=await fetch('/api/account-removal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values),signal:AbortSignal.timeout(15000)});
+  const response=await fetch('/api/account-removal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values),signal:AbortSignal.timeout(30000)});
   const result=await response.json();
   if(!response.ok)throw new Error(result.error||'Your request could not be sent. Please email support@paysme.site.');
   status.textContent='Your request has been sent to support@paysme.site. Support will contact you to verify ownership before removing your account.';

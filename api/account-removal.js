@@ -1,7 +1,8 @@
 import {createHash} from 'node:crypto';
+import {createSmtpSender,smtpOptions} from '../server/smtp.js';
 
 // Public so people who cannot sign in can still request removal. Never deletes data.
-export function createRemovalHandler({env=process.env,fetcher=fetch,now=Date.now}={}) {
+export function createRemovalHandler({env=process.env,sendMail=createSmtpSender({env}),now=Date.now}={}) {
  const attempts=new Map();
  return async function handler(req,res) {
   res.setHeader('Cache-Control','no-store');
@@ -19,21 +20,16 @@ export function createRemovalHandler({env=process.env,fetcher=fetch,now=Date.now
   const name=String(data.name||'').trim(), email=String(data.email||'').trim().toLowerCase();
   const phone=String(data.phone||'').trim(), reason=String(data.reason||'').trim();
   if(!name||name.length>120||/[\r\n]/.test(name)||email.length>254||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||phone.length>24||(phone&&!/^[+\d ()-]+$/.test(phone))||reason.length>2000||data.consent!==true)return reply(400,'Enter your name, a valid account email and confirm the removal request.');
-  if(!env.RESEND_API_KEY||!env.ACCOUNT_REMOVAL_FROM)return reply(503,'Online requests are temporarily unavailable. Please email your request to support@paysme.site.');
-  // Best-effort instance-local throttle; the provider also deduplicates retries.
+  try{smtpOptions(env);}catch{return reply(503,'Online requests are temporarily unavailable. Please email your request to support@paysme.site.');}
+  // Best-effort instance-local throttle; SMTP does not offer API idempotency keys.
   const key=createHash('sha256').update(email).digest('hex');
   const timestamp=now();
   for(const [k,expiry] of attempts)if(expiry<=timestamp)attempts.delete(k);
   if(attempts.has(key)){res.setHeader('Retry-After','60');return reply(429,'Please wait one minute before sending another request.');}
   attempts.set(key,timestamp+60000);
   try {
-   const response=await fetcher('https://api.resend.com/emails',{
-    method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`removal-${key}-${Math.floor(timestamp/300000)}`},
-    body:JSON.stringify({from:env.ACCOUNT_REMOVAL_FROM,to:['support@paysme.site'],reply_to:email,subject:'SeekGRNJobs account removal request',text:`Account removal requested\n\nName: ${name}\nAccount email: ${email}\nMobile: ${phone||'Not supplied'}\nAdditional information: ${reason||'None'}\n\nThe requester confirmed this is their own account. Verify ownership before deleting any account or data.`}),
-    signal:AbortSignal.timeout(10000)
-   });
-   const result=await response.json();
-   if(!response.ok||!result.id){attempts.delete(key);return reply(502,'Your request could not be sent. Please try again or email support@paysme.site.');}
+   const result=await sendMail({from:env.SMTP_FROM||'SeekGRNJobs <support@paysme.site>',to:['support@paysme.site'],replyTo:email,subject:'SeekGRNJobs account removal request',text:`Account removal requested\n\nName: ${name}\nAccount email: ${email}\nMobile: ${phone||'Not supplied'}\nAdditional information: ${reason||'None'}\n\nThe requester confirmed this is their own account. Verify ownership before deleting any account or data.`});
+   if(!result?.accepted?.some(address=>String(address).toLowerCase()==='support@paysme.site')){attempts.delete(key);return reply(502,'Your request could not be sent. Please try again or email support@paysme.site.');}
    return reply(200);
   }catch{attempts.delete(key);return reply(502,'Delivery could not be confirmed. Please email support@paysme.site or try again.');}
  };

@@ -11,6 +11,38 @@ export function verifiedContacts(account) {
   return Boolean(account?.email && account.email_confirmed_at && account.phone && account.phone_confirmed_at);
 }
 
+export function contactProgress(account, enteredPhone = account?.phone || '') {
+  const email = Boolean(account?.email && account.email_confirmed_at);
+  let mobile = Boolean(account?.phone && account.phone_confirmed_at);
+  if (mobile) {
+    try { mobile = namibianPhone(enteredPhone) === namibianPhone(account.phone); }
+    catch { mobile = false; }
+  }
+  return {email, mobile, next: !email ? 'email' : !mobile ? 'mobile' : 'complete'};
+}
+
+// Use confirmed Auth fields, including provider-confirmed email, rather than
+// editable user metadata or a browser flag from a previous OAuth attempt.
+export async function continueContactVerification(auth, account, {email, phone, redirectTo}) {
+  if (!account?.id) throw new Error('Sign in again to verify your contact details.');
+  const step = contactProgress(account, phone).next;
+  if (step === 'complete') return {complete: true};
+  if (step === 'mobile') {
+    const number = await sendPhoneCode(auth, phone);
+    return {challenge: {phone: number, type: 'phone_change'}};
+  }
+  let result, challenge;
+  if (!account.email) {
+    result = await auth.updateUser({email});
+    challenge = {email, type: 'email_change'};
+  } else {
+    result = await auth.signInWithOtp({email: account.email, options: {shouldCreateUser: false, emailRedirectTo: redirectTo}});
+    challenge = {email: account.email, type: 'email'};
+  }
+  if (result.error) throw result.error;
+  return {challenge};
+}
+
 // Email is the initial identity for every registration. Attach the phone only
 // after email confirmation so both contacts belong to the same Auth user.
 export async function registerAccount(auth, {email, phone, password, redirectTo}) {
@@ -22,8 +54,7 @@ export async function registerAccount(auth, {email, phone, password, redirectTo}
   return {...result.data, ...contact};
 }
 
-export async function sendPhoneCode(auth, value, enabled) {
-  if (!enabled) throw new Error('SMS verification is awaiting activation. Your number has not been verified.');
+export async function sendPhoneCode(auth, value) {
   const phone = namibianPhone(value);
   const {error} = await auth.updateUser({phone});
   if (error) throw error;
@@ -33,7 +64,7 @@ export async function sendPhoneCode(auth, value, enabled) {
 export async function verifyContact(auth, challenge, token, expectedUserId) {
   const {data, error} = await auth.verifyOtp({...challenge, token: token.trim()});
   if (error) throw error;
-  if (expectedUserId && data.user?.id !== expectedUserId) {
+  if (expectedUserId && data?.user?.id !== expectedUserId) {
     await auth.signOut();
     throw new Error('Your account changed during verification. Please sign in again.');
   }

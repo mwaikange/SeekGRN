@@ -15,7 +15,7 @@ Expected result: your email, role `super_admin`, contact phone `+264818083704`, 
 In **Authentication → Email Templates**, paste [supabase/templates/otp.html](supabase/templates/otp.html) into each of:
 
 - Confirm signup
-- Magic Link (also used for email code sign-in and social signup contact verification)
+- Magic Link (used when an existing unconfirmed email needs verification)
 - Reset Password
 - Change Email Address
 
@@ -37,28 +37,43 @@ The SMSPortal integration is a Supabase **Send SMS Auth Hook**. Supabase generat
    | `SEND_SMS_HOOK_SECRET` | Full generated Supabase hook signing secret |
 
 5. Enable the Send SMS hook and **Authentication → Sign In / Providers → Phone**. Keep phone confirmation enabled. The custom hook delivers messages instead of the default SMS provider. Do not set phone auto-confirm or fixed test OTPs in production. Set OTP expiry and resend limits appropriate to the service (for example, five minutes and at least 60 seconds).
-6. From the app, sign in with email, open My account → Verify contact details, complete email OTP and then SMS OTP. Confirm the same Auth user has both `email_confirmed_at` and `phone_confirmed_at`. Test wrong and expired codes too. Then test mobile sign-in for that account.
+6. From the app, sign in and open My account → Complete contact verification. An already confirmed email should show a check mark; send only the mobile SMS code in that case. Confirm the same Auth user has both email_confirmed_at and phone_confirmed_at. Test wrong and expired codes too, then test mobile sign-in.
 
 The hook uses SMSPortal v3 `BulkMessages` and Basic authentication. No SMS was sent and no credit was consumed in development tests. Actual delivery requires the credentials and activation above. [SMSPortal quickstart](https://docs.smsportal.com/docs/quickstart) · [Supabase Send SMS hook](https://supabase.com/docs/guides/auth/auth-hooks/send-sms-hook).
 
 ## 4. Apple sign-in
 
-Apple uses Supabase's Apple provider. Configure the Apple Developer Services ID, team/key credentials and callback `https://dmrtrkhjlarjzhaxyflf.supabase.co/auth/v1/callback`, then enable Apple in Supabase. The button automatically becomes available when the provider is enabled. Social signup still requires the contact verification screens; provider email is used for the email code, including an Apple relay email when selected.
+Apple uses Supabase's Apple provider. Configure the Apple Developer Services ID, team/key credentials and callback `https://dmrtrkhjlarjzhaxyflf.supabase.co/auth/v1/callback`, then enable Apple in Supabase. The button automatically becomes available when the provider is enabled. Social signup accepts the server-confirmed provider email, including an Apple relay email. A separate email code is not sent for an already confirmed email. The mobile number still requires SMS verification.
 
-## Account-removal request email (Vercel)
+## Contact-verification flow
 
-The public `/request-account-removal` page works without sign-in. Its Send button posts to `/api/account-removal`; the server emails only `support@paysme.site`. It does not delete accounts automatically. Support must verify ownership before removing the Auth user and saved applicant records. Do not request passwords or OTPs.
+- Email/password signup: confirm the email OTP, see the email check mark, then the app sends the SMS OTP to the number supplied at signup.
+- Google/Apple: an email confirmed by Auth is already verified. Collect the mobile number and send only the SMS OTP. Do not trust editable metadata as verification.
+- Returning users with both contacts confirmed sign in normally. Email OTP is used for forgotten-password recovery, email confirmation or a newly added email; it is not resent simply to verify an already confirmed mobile.
+- Verification steps show Email and Mobile status, explicit Sending/Verifying labels, a spinner and resend cooldown. A failed SMS send stays on the mobile step and displays the real error.
+- The client does not use a missing/cached Phone provider setting to suppress SMS requests. If the backend rejects a send, check that Phone authentication and the Send SMS hook are both enabled; function secrets alone do not activate either.
+- Admin circular management has one entry point: the signed-in Admin navigation tab. It is not part of the account/verification sheet.
 
-To enable delivery, verify your sending domain in [Resend](https://resend.com/domains), create a sending API key, and add these **server-only Vercel environment variables** to Production and any Preview environment you want to test:
+## Account-removal request email through SMTP (Vercel)
 
-- `RESEND_API_KEY`: your Resend sending key.
-- `ACCOUNT_REMOVAL_FROM`: `SeekGRNJobs <support@paysme.site>` (or another sender on your verified domain).
+The public removal page posts to /api/account-removal. The server emails only support@paysme.site and uses the applicant email as Reply-To. It never deletes accounts automatically.
 
-Redeploy after adding the variables. Never prefix either variable with `VITE_`. The SMSPortal secrets still belong only in Supabase. No new Supabase migration or Auth change is needed for this page.
+Add these server-only Vercel environment variables from your email hosting account:
 
-Without sender credentials, the form displays a clear error and directs the user to email support; it never reports a request as sent. Test one real request after configuring the sender and confirm it arrives in the support mailbox. Automated tests use mock delivery and send no real email.
+| Variable | Value |
+| --- | --- |
+| SMTP_HOST | Your provider’s SMTP server hostname |
+| SMTP_PORT | 465 for implicit TLS, or 587 for STARTTLS |
+| SMTP_SECURE | true for 465; false for 587 |
+| SMTP_USER | Your SMTP mailbox/login |
+| SMTP_PASS | Your SMTP password or app password |
+| SMTP_FROM | SeekGRNJobs <support@paysme.site>, or an authorised sender |
 
-The endpoint validates input and same-origin browser requests, uses a honeypot and best-effort instance-local throttling, and deduplicates email retries through Resend. For higher traffic, add shared rate limiting or a managed challenge using Vercel's firewall. The client also prevents repeat sends while submitting.
+Redeploy after adding them. Do not put SMTP credentials in browser variables or prefix them with VITE_. SMSPortal secrets stay only in Supabase. Existing email authentication continues using Supabase’s own SMTP configuration; Vercel credentials are for the removal form.
+
+The transport requires TLS and keeps certificate verification enabled. Missing credentials, rejection and timeouts produce a clear error; success is reported only when the SMTP server accepts the support recipient. Automated tests use mock delivery and send no real email. After setup, send one real removal request and confirm its receipt in the support mailbox.
+
+The endpoint validates input and same-origin requests, has a honeypot and best-effort instance-local throttling, and blocks duplicate clicks while sending. SMTP acceptance does not guarantee inbox delivery and SMTP does not provide API idempotency guarantees.
 
 ## 5. Google sign-in - final setup
 
@@ -68,6 +83,6 @@ The endpoint validates input and same-origin browser requests, uses a honeypot a
 4. Add this exact **Authorised redirect URI**: `https://dmrtrkhjlarjzhaxyflf.supabase.co/auth/v1/callback`.
 5. Copy Client ID and Client Secret into **Supabase → Authentication → Sign In / Providers → Google**, and enable Google. Do not put the Client Secret in the repository or frontend environment.
 6. Confirm the app URL is allowed in Supabase URL Configuration (step 2). Reload SeekGRNJobs; the Google button reads the enabled provider setting automatically.
-7. Test Google signup and return to the app. Complete the email and mobile OTP steps. Check that the same Auth user owns both verified contacts. Publish the Google consent app when ready to allow public users.
+7. Test Google signup and return to the app. The provider-confirmed email should show a check mark. Complete the mobile SMS OTP step. Check that the same Auth user owns both verified contacts. Publish the Google consent app when ready to allow public users.
 
 [Official Supabase Google setup](https://supabase.com/docs/guides/auth/social-login/auth-google)
