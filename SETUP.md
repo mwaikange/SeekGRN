@@ -49,6 +49,23 @@ In Supabase → Edge Functions → smsportal-otp → Code, replace only handler.
 
 A GitHub/Vercel deployment updates the website but does not deploy this Supabase function. Retest Send SMS code after saving the new function version. Signed validation/delivery failures use the structured Auth error envelope so the app can show the error; unsigned requests still receive HTTP 401.
 
+### Diagnose a 502 while sending an SMS
+
+A gateway log for PUT /auth/v1/user only shows that Auth failed. It does not include the SMSPortal HTTP response. Replace handler.js with the complete repository file and deploy the Supabase function, then press Send SMS code once. Copy the reference code displayed in the app, or the new matching JSON entry from Edge Functions → smsportal-otp → Logs. No index.ts or secret changes are needed.
+
+| Reference | Meaning / next check |
+| --- | --- |
+| SMS-AUTH (HTTP 401/403 in function logs) | Authentication or API access rejected. Check the active REST key and its matching Client ID/Secret; check any IP whitelist restrictions. |
+| SMS-REQUEST (HTTP 400) | Provider request validation failed. |
+| SMS-RATE-LIMIT (HTTP 429) | Wait and check API rate limits. |
+| SMS-PROVIDER | Provider HTTP failure; check the logged status. |
+| SMS-REJECTED | HTTP succeeded but the provider reported message errors. Inspect account credit, sending permissions and the provider's own records. |
+| SMS-TIMEOUT / SMS-NETWORK | Sending could not be confirmed. Do not automatically retry: the provider may already have received the message. |
+| SMS-RESPONSE | Provider response could not be read or validated; delivery is unconfirmed. |
+| SMS-ACCEPTED | The API accepted the request; check SMSPortal delivery reports if the handset receives nothing. |
+
+Diagnostic entries include a component field of smsportal-otp, a code, stage and numeric httpStatus where available. Logs never include OTPs, phone numbers, credentials or raw request/response bodies.
+
 ## 4. Apple sign-in
 
 Apple uses Supabase's Apple provider. Configure the Apple Developer Services ID, team/key credentials and callback `https://dmrtrkhjlarjzhaxyflf.supabase.co/auth/v1/callback`, then enable Apple in Supabase. The button automatically becomes available when the provider is enabled. Social signup accepts the server-confirmed provider email, including an Apple relay email. A separate email code is not sent for an already confirmed email. The mobile number still requires SMS verification.

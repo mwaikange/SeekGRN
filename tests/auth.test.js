@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {namibianPhone,verifiedContacts,registerAccount,sendPhoneCode,verifyContact,contactProgress,continueContactVerification} from '../src/auth-service.js';
-import {smsPortalHandler} from '../supabase/functions/smsportal-otp/handler.js';
+import {smsPortalHandler as createSmsPortalHandler} from '../supabase/functions/smsportal-otp/handler.js';
+const smsPortalHandler=options=>createSmsPortalHandler({logger:()=>{},...options});
 
 test('normalises Namibian contacts without duplicating the fixed country prefix',()=>{
  for(const value of ['0818083704','818083704','+264818083704','264818083704','81 808 3704'])assert.equal(namibianPhone(value),'+264818083704');
@@ -115,5 +116,30 @@ test('SMSPortal message rejection and timeouts remain structured errors instead 
   const handler=smsPortalHandler({clientId:'client',apiSecret:'secret',verify:()=>({user:{new_phone:'264818083704'},sms:{otp:'123456'}}),fetcher});
   const response=await handler(new Request('https://example.com',{method:'POST',body:'{}'}));
   assert.equal(response.status,200);const body=await response.json();assert.equal(body.error.http_code,502);assert.doesNotMatch(JSON.stringify(body),/sensitive network detail|123456|secret/);
+ }
+});
+
+test('SMS diagnostics distinguish provider HTTP failures without logging request or response secrets',async()=>{
+ for(const [status,code] of [[400,'SMS-REQUEST'],[401,'SMS-AUTH'],[403,'SMS-AUTH'],[429,'SMS-RATE-LIMIT'],[500,'SMS-PROVIDER']]){
+  const logs=[];
+  const handler=smsPortalHandler({clientId:'private-client',apiSecret:'private-api-key',logger:entry=>logs.push(entry),verify:()=>({user:{new_phone:'264818083704'},sms:{otp:'123456'}}),fetcher:async()=>new Response('secret provider body with 123456 and 264818083704',{status})});
+  const response=await handler(new Request('https://example.com',{method:'POST',body:'{}'}));const body=await response.json();
+  assert.equal(response.status,200);assert.equal(body.error.http_code,502);assert.match(body.error.message,new RegExp(code));
+  assert.deepEqual(logs,[{component:'smsportal-otp',code,stage:'provider_http',httpStatus:status}]);
+  assert.doesNotMatch(JSON.stringify({logs,body}),/private-client|private-api-key|123456|264818083704|secret provider body/);
+ }
+});
+
+test('SMS diagnostics distinguish timeouts, connection failures, and unreadable provider responses',async()=>{
+ for(const [fetcher,code] of [
+  [async()=>{throw new DOMException('private timeout detail','TimeoutError');},'SMS-TIMEOUT'],
+  [async()=>{throw Error('private network detail');},'SMS-NETWORK'],
+  [async()=>new Response('private response detail'),'SMS-RESPONSE'],
+  [async()=>Response.json(null),'SMS-RESPONSE'],
+  [async()=>Response.json({errorReport:{noOfErrors:1}}),'SMS-REJECTED']
+ ]){
+  const logs=[];const handler=smsPortalHandler({clientId:'client',apiSecret:'secret',logger:entry=>logs.push(entry),verify:()=>({user:{new_phone:'264818083704'},sms:{otp:'123456'}}),fetcher});
+  const body=await(await handler(new Request('https://example.com',{method:'POST',body:'{}'}))).json();
+  assert.equal(body.error.http_code,502);assert.match(body.error.message,new RegExp(code));assert.equal(logs[0].code,code);assert.doesNotMatch(JSON.stringify(logs),/private|123456|264818083704/);
  }
 });
