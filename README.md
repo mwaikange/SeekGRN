@@ -8,7 +8,7 @@ Use Node.js 22 or later. Run `npm ci`, then `npm run dev`. Run `npm test` for th
 
 ## Vercel and Supabase
 
-Import `mwaikange/SeekGRN` into Vercel. The repository includes Vite settings, the official blank forms and the circular PDF. The default client configuration points to the existing SeekGRnJobs Supabase project. Use the variables in `.env.example` only to select a different project or rotate the publishable key. Keep secret and service-role keys out of the web build.
+The `seek-grn` Vercel project is linked to `mwaikange/SeekGRN`. Deployments run the circular and form checks before building Vite. The repository includes the official blank forms and the circular PDF. The default client configuration points to the existing SeekGRnJobs Supabase project. Use the variables in `.env.example` only to select a different project or rotate the publishable key. Keep secret and service-role keys out of the web build.
 
 In Supabase Authentication → URL Configuration, set the Site URL to the production Vercel URL and add each approved preview or development redirect URL. Configure SMTP for public signup and recovery email. To send codes in the account confirmation and password reset emails, add the `{{ .Token }}` variable to their templates. Configure a Google OAuth client and an SMS provider in Supabase to activate those sign-in and verification flows.
 
