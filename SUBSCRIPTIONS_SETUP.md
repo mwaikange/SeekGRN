@@ -36,15 +36,35 @@ Never use the human-readable Vendor ID, SMSPortal credentials or a facilitator p
 
 Use merchant tax settings that preserve the advertised N$50/N$240/N$360 final price (prices include VAT, or do not charge VAT, as appropriate for your business). Do not enable add-VAT-on-top without revising the quoted price and amount-matching policy. The app does not calculate VAT.
 
-## 3. Register the PaySME webhook
+## 3. Shared PaySME webhook and central return
 
-In the SeekGRNJobs PaySME merchant portal Profile → Webhook URL, set:
+This merchant profile is shared with other apps. Keep its merchant-wide webhook set to:
+
+    https://merchant-webhook.paysme.app/webhook/00000000-1986-0026-0000-000000000001
+
+Do not replace that merchant-wide URL with the app-specific receiver. The shared router must forward only SEEKGRN invoice events to:
 
     https://seek-grn.vercel.app/api/paysme-webhook
 
-Save its matching signing secret as PAYSME_WEBHOOK_SECRET above. The endpoint verifies HMAC-SHA256 over the untouched raw body using X-PaySME-Signature: sha256=<hex>. Only signed payment.paid events with status paid, currency NAD, matching merchant, exact saved invoice amount and a unique transaction activate a term. Replays return success without extending access again. Unknown invoices and mismatches are rejected; temporary processing failures return a retryable error. Never activate a package from a redirect, SDK SMS callback or client-edited status.
+The receiver still requires X-PaySME-Signature: sha256=<hex>, HMAC-SHA256 over the unchanged raw JSON body, using the configured PAYSME_WEBHOOK_SECRET. If the router reserializes the body, it must sign the forwarded bytes with the matching secret. It must forward the documented payment.paid event, status paid, merchant_id, invoice_id, transaction_id, amount and currency. Do not downgrade verification to trusting a URL flag, a bare forwarding header or an SMS callback. Existing SG-UUID invoice events remain accepted for older saved obligations; configure a temporary SG route for outstanding SeekGRN-only legacy invoices if any exist. All new references use SEEKGRN-seven uppercase hexadecimal characters.
 
-The return URL is https://seek-grn.vercel.app/#subscription. Returning only refreshes server status.
+The subscription receiver matches the stored app prefix, invoice, amount and currency, then applies the payment once. Replays do not extend access again. Other apps cannot claim a SeekGRN invoice. No fulfilment is performed by the return page.
+
+Central return URL for SDK checkout configuration and the hosted fallback:
+
+    https://www.paysme.site/payment/return
+
+The current PaySME Request-to-Pay SDK transport does not send redirect_url in its SMS request body. The app passes the requested central return configuration, and the fallback URL includes it; the shared PaySME hosted SMS checkout must also be configured to use the central return page. This app does not fork or alter the shared SDK.
+
+At verification time, merchant-webhook.paysme.app did not resolve from this environment (ENOTFOUND); no successful live forwarding or signed payment delivery is claimed. PaySME's central return registry was also empty in the inspected source. Register SeekGRNJobs there using public/paysme-app.json or the record in PAYSME_APP_HANDOFF.md. Shared DNS, routing, signing and central registration must be operational for end-to-end activation and app return.
+
+### Existing deployments: short-reference migration
+
+If scripts/subscriptions.sql was already run, run scripts/payment-return-update.sql before testing payment callbacks on this release. It adds app/currency fields, changes new reference generation, and updates the payment RPC to verify currency. It preserves saved invoices and subscriptions. If subscriptions have not been installed, run the complete updated scripts/subscriptions.sql instead.
+
+New references such as SEEKGRN-8A2DD90 are reserved in the database before checkout. A seven-character collision retries against the unique invoice primary key. Retries for an existing pending obligation keep its original reference, including pre-existing SG references. A new paid term receives a new reference. Never rename an invoice already sent to PaySME.
+
+The central page appends invoice_id to the registered app-opening URL. SeekGRN saves that reference through sign-in and requests /api/subscription-status with the signed-in user's bearer token. The lookup filters both invoice and user; another account sees no payment details. Redirect status flags cannot mark an order paid. The app displays only the stored backend payment state and refreshes its actual subscription entitlement.
 
 ## 4. SDK and Expo wrapper
 

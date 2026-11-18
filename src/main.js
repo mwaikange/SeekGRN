@@ -9,8 +9,10 @@ import {legalPage} from './legal.js';
 import {removalPage,submitRemoval} from './removal.js';
 import {subscriptionPage,mountSubscription,subscriptionStatus,savePreparedPack} from './subscription.js';
 import {preparationAvailable} from './subscription-plans.js';
+import {capturePaymentReturn,returnInvoiceKey} from './payment-config.js';
 
 async function initialize() {
+capturePaymentReturn(location,sessionStorage);
 let recovering = false;
 const authSubscription = supabase.auth.onAuthStateChange(event => {
   if (event === 'PASSWORD_RECOVERY') recovering = true;
@@ -180,6 +182,7 @@ async function reloadAccount() {
  if(!user){
   sessionStorage.removeItem(intentKey);
   sessionStorage.removeItem('seekgrn-registration');
+  sessionStorage.removeItem(returnInvoiceKey);
   document.querySelector('.auth-sheet')?.close();
   state.view='browse';state.profile=fields.blankProfile();state.documents=[];
   state.admin=false;state.notice='';state.circularDraft=undefined;state.pending=null;state.subscription=null;

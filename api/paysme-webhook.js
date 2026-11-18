@@ -1,5 +1,6 @@
 import {createHmac,timingSafeEqual} from 'node:crypto';
 import {database} from '../server/subscriptions.js';
+import {isAppInvoice} from '../src/payment-config.js';
 export const config={api:{bodyParser:false}};
 async function rawBody(req){
  const chunks=[];let size=0;
@@ -21,9 +22,9 @@ export function createWebhookHandler({env=process.env,client=()=>database(env,nu
   if(event?.event!=='payment.paid')return res.status(200).json({ignored:true});
   // Accept exactly the documented signed completion, never a browser callback.
   const amount=Number(event.amount);
-  if(event.status!=='paid'||event.currency!=='NAD'||event.merchant_id!==env.PAYSME_MERCHANT_ID||!/^SG-[a-f0-9-]{36}$/i.test(event.invoice_id||'')||typeof event.transaction_id!=='string'||!event.transaction_id||event.transaction_id.length>150||!Number.isFinite(amount)||amount<=0)return fail(400,'Payment details do not match.');
+  if(event.status!=='paid'||event.currency!=='NAD'||event.merchant_id!==env.PAYSME_MERCHANT_ID||!isAppInvoice(event.invoice_id)||typeof event.transaction_id!=='string'||!event.transaction_id||event.transaction_id.length>150||!Number.isFinite(amount)||amount<=0)return fail(400,'Payment details do not match.');
   try{
-   const {data,error}=await client().rpc('apply_subscription_payment',{p_invoice:event.invoice_id,p_transaction:event.transaction_id,p_amount:amount});
+   const {data,error}=await client().rpc('apply_subscription_payment',{p_invoice:event.invoice_id,p_transaction:event.transaction_id,p_amount:amount,p_currency:event.currency});
    if(error)return fail(error.code==='P0001'?400:503,'Unable to apply this payment.');
    return res.status(200).json({ok:true,replayed:Boolean(data?.replayed)});
   }catch{return fail(503,'Unable to apply this payment.');}

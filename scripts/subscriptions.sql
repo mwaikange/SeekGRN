@@ -7,11 +7,17 @@ create table if not exists public.subscription_orders (
  plan text not null check(plan in ('monthly','biannual','annual')),
  amount numeric(12,2) not null check(amount>0),
  town text not null,
+ app_prefix text not null default 'SEEKGRN',
+ app_name text not null default 'SeekGRNJobs',
+ currency text not null default 'NAD',
  status text not null default 'pending' check(status in ('pending','paid')),
  transaction_id text unique,
  created_at timestamptz not null default now(),
  paid_at timestamptz
 );
+alter table public.subscription_orders add column if not exists app_prefix text not null default 'SEEKGRN';
+alter table public.subscription_orders add column if not exists app_name text not null default 'SeekGRNJobs';
+alter table public.subscription_orders add column if not exists currency text not null default 'NAD';
 create table if not exists public.subscription_terms (
  id uuid primary key default gen_random_uuid(),
  user_id uuid not null references auth.users(id) on delete cascade,
@@ -91,7 +97,7 @@ grant execute on function public.subscription_status() to authenticated;
 
 create or replace function public.create_subscription_order(p_plan text,p_town text) returns jsonb
  language plpgsql security definer set search_path=pg_catalog,public as $$
-declare u uuid:=auth.uid(); o public.subscription_orders%rowtype; price numeric;
+declare u uuid:=auth.uid(); o public.subscription_orders%rowtype; price numeric; attempt integer;
 begin
  if u is null then raise exception 'Sign in to subscribe.'; end if;
  if exists(select 1 from public.app_admins where user_id=u) then raise exception 'Administrators have free unlimited access.'; end if;
@@ -99,18 +105,25 @@ begin
  price:=case p_plan when 'monthly' then 50 when 'biannual' then 240 when 'annual' then 360 else null end;
  if price is null or p_town is null or length(trim(p_town)) not between 1 and 100 then raise exception 'Choose a valid package and town.'; end if;
  perform pg_advisory_xact_lock(hashtextextended(u::text,0));
- select * into o from public.subscription_orders where user_id=u and plan=p_plan and status='pending' order by created_at desc limit 1;
+ select * into o from public.subscription_orders where user_id=u and plan=p_plan and status='pending' and app_prefix='SEEKGRN' and currency='NAD' order by created_at desc limit 1;
  if o.invoice_id is null then
-  insert into public.subscription_orders(invoice_id,user_id,plan,amount,town)
-   values('SG-'||gen_random_uuid()::text,u,p_plan,price,trim(p_town)) returning * into o;
+  -- Seven random hexadecimal characters; the PK and retry loop guarantee uniqueness.
+  for attempt in 1..10 loop
+   insert into public.subscription_orders(invoice_id,user_id,plan,amount,town,app_prefix,app_name,currency)
+    values('SEEKGRN-'||upper(substr(replace(gen_random_uuid()::text,'-',''),1,7)),u,p_plan,price,trim(p_town),'SEEKGRN','SeekGRNJobs','NAD')
+    on conflict(invoice_id) do nothing returning * into o;
+   exit when found;
+  end loop;
+  if o.invoice_id is null then raise exception 'Unable to reserve a payment reference. Please retry.'; end if;
  end if;
- return jsonb_build_object('invoice_id',o.invoice_id,'plan',o.plan,'amount',o.amount,'town',o.town,'status',o.status);
+ return jsonb_build_object('invoice_id',o.invoice_id,'plan',o.plan,'amount',o.amount,'town',o.town,'status',o.status,'app_prefix',o.app_prefix,'app_name',o.app_name,'currency',o.currency);
 end $$;
 revoke all on function public.create_subscription_order(text,text) from public,anon;
 grant execute on function public.create_subscription_order(text,text) to authenticated;
 
 -- Only the signed server webhook may call this service-role-only function.
-create or replace function public.apply_subscription_payment(p_invoice text,p_transaction text,p_amount numeric) returns jsonb
+drop function if exists public.apply_subscription_payment(text,text,numeric);
+create or replace function public.apply_subscription_payment(p_invoice text,p_transaction text,p_amount numeric,p_currency text) returns jsonb
  language plpgsql security definer set search_path=pg_catalog,public as $$
 declare o public.subscription_orders%rowtype; starts timestamptz; months integer;
 begin
@@ -118,7 +131,7 @@ begin
  if o.invoice_id is null then raise exception 'Unknown invoice.'; end if;
  perform pg_advisory_xact_lock(hashtextextended(o.user_id::text,0));
  select * into o from public.subscription_orders where invoice_id=p_invoice for update;
- if p_amount is distinct from o.amount or p_transaction is null or length(p_transaction) not between 1 and 150 then raise exception 'Payment details do not match.'; end if;
+ if o.app_prefix<>'SEEKGRN' or p_currency is distinct from o.currency or p_amount is distinct from o.amount or p_transaction is null or length(p_transaction) not between 1 and 150 then raise exception 'Payment details do not match.'; end if;
  if o.status='paid' then
   if o.transaction_id<>p_transaction then raise exception 'Invoice already paid by another transaction.'; end if;
   return jsonb_build_object('replayed',true);
@@ -130,8 +143,8 @@ begin
  update public.subscription_orders set status='paid',paid_at=now(),transaction_id=p_transaction where invoice_id=p_invoice;
  return jsonb_build_object('replayed',false,'starts_at',starts);
 end $$;
-revoke all on function public.apply_subscription_payment(text,text,numeric) from public,anon,authenticated;
-grant execute on function public.apply_subscription_payment(text,text,numeric) to service_role;
+revoke all on function public.apply_subscription_payment(text,text,numeric,text) from public,anon,authenticated;
+grant execute on function public.apply_subscription_payment(text,text,numeric,text) to service_role;
 
 -- Atomic allowance charge + pack save. Failures roll back BOTH operations.
 create or replace function public.save_prepared_pack(p_bundle jsonb) returns jsonb
@@ -182,3 +195,5 @@ drop trigger if exists check_prepared_documents on public.applicant_data;
 create trigger check_prepared_documents before insert or update on public.applicant_data for each row execute function public.check_prepared_documents();
 commit;
 select 'Subscription setup complete. Existing accounts and packs preserved.' as result;
+
+notify pgrst, 'reload schema';

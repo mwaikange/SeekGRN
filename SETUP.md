@@ -77,4 +77,4 @@ The endpoint validates input and same-origin requests, has a honeypot and best-e
 
 ## Subscriptions and PaySME payments
 
-See [SUBSCRIPTIONS_SETUP.md](SUBSCRIPTIONS_SETUP.md). Apply scripts/subscriptions.sql to preserve existing packs and enable server-enforced allowances, configure the PaySME merchant/server variables privately in Vercel, and register https://seek-grn.vercel.app/api/paysme-webhook in the merchant portal. SMS requests remain pending until the signed paid webhook activates a package.
+See [SUBSCRIPTIONS_SETUP.md](SUBSCRIPTIONS_SETUP.md). Apply scripts/subscriptions.sql to preserve existing packs and enable server-enforced allowances, configure the PaySME merchant/server variables privately in Vercel, and keep the shared merchant webhook at https://merchant-webhook.paysme.app/webhook/00000000-1986-0026-0000-000000000001 and route SEEKGRN signed notifications to https://seek-grn.vercel.app/api/paysme-webhook. Use https://www.paysme.site/payment/return as the central return page. SMS requests remain pending until the signed paid webhook activates a package.

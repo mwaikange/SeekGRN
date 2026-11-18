@@ -1,5 +1,6 @@
 import {createClient} from '@supabase/supabase-js';
 import {PLANS} from '../src/subscription-plans.js';
+import {PAYSME_RETURN_URL} from '../src/payment-config.js';
 export const PROJECT_URL='https://dmrtrkhjlarjzhaxyflf.supabase.co';
 const PUBLIC_KEY='sb_publishable_zWaAa_AY_6HO8d3PDLRw2Q_tMk6OrmD';
 export function merchantConfig(env){
@@ -30,7 +31,7 @@ export function createOrderHandler({env=process.env,client=(token)=>database(env
    if(auth.error||!auth.data?.user)return fail(401,'Sign in again to continue.');
    const {data,error}=await db.rpc('create_subscription_order',{p_plan:body.plan,p_town:body.town.trim()});
    if(error)return fail(400,error.code==='P0001'?error.message:'Unable to prepare your payment request. Please try again.');
-   return res.status(200).json({order:data,checkout:{...config,invoice_id:data.invoice_id,amount_nad:data.amount,mobile:auth.data.user.phone,email:auth.data.user.email,town:data.town,idempotency_key:'seekgrn-'+data.invoice_id}});
+   return res.status(200).json({order:data,checkout:{...config,invoice_id:data.invoice_id,amount_nad:data.amount,mobile:auth.data.user.phone,email:auth.data.user.email,town:data.town,idempotency_key:'seekgrn-'+data.invoice_id,redirect_url:PAYSME_RETURN_URL}});
   }catch{return fail(503,'Unable to prepare your payment request. Please try again.');}
  };
 }

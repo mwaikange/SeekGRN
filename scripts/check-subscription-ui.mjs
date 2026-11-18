@@ -21,7 +21,8 @@ try{
    else throw Error('Unexpected DB request: '+url);
    await route.fulfill({json:body});
   });
-  await context.route('**/api/subscription',route=>route.fulfill({json:{order:{invoice_id:'SG-test',amount:360},checkout:{vendor_uuid:user.id,api_key:'test-key',invoice_id:'SG-test',amount_nad:360,mobile:user.phone,email:user.email,town:'Okahandja',idempotency_key:'seekgrn-SG-test'}}}));
+  await context.route('**/api/subscription',route=>route.fulfill({json:{order:{invoice_id:'SEEKGRN-8A2DD90',amount:360},checkout:{vendor_uuid:user.id,api_key:'test-key',invoice_id:'SEEKGRN-8A2DD90',amount_nad:360,mobile:user.phone,email:user.email,town:'Okahandja',idempotency_key:'seekgrn-SEEKGRN-8A2DD90'}}}));
+  await context.route('**/api/subscription-status?**',route=>route.fulfill({json:{order:{invoice_id:'SEEKGRN-8A2DD90',app_prefix:'SEEKGRN',currency:'NAD',status:paid?'paid':'pending',amount:360}}}));
   await context.route('https://www.paysme.site/sdk/v1/paysme.js',async route=>{sdkLoads++;await route.fulfill({contentType:'application/javascript',body:'window.PaySME={renderRequestToPayButton(c){const b=document.createElement("button");b.textContent="Create Payment Request";b.onclick=()=>c.on_request_sent({});c.container.append(b);}}'});});
   const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:5173/#subscription');

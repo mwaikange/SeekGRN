@@ -5,7 +5,7 @@ import {PLANS,regularSubscriber,preparationAvailable} from '../src/subscription-
 import {createOrderHandler} from '../server/subscriptions.js';
 import {createWebhookHandler} from '../api/paysme-webhook.js';
 const merchant='123e4567-e89b-42d3-a456-426614174000';
-const invoice='SG-123e4567-e89b-42d3-a456-426614174001';
+const invoice='SEEKGRN-8A2DD90';
 const env={PAYSME_MERCHANT_ID:merchant,PAYSME_API_KEY:'merchant-integration-key',PAYSME_WEBHOOK_SECRET:'private-signing-key',SUPABASE_SERVICE_ROLE_KEY:'private-server-key'};
 const response=()=>({headers:{},setHeader(k,v){this.headers[k]=v;},status(code){this.code=code;return this;},json(body){this.body=body;return this;}});
 const orderReq=(body={plan:'annual',town:'Okahandja'})=>({method:'POST',headers:{'content-type':'application/json',authorization:'Bearer user-token'},body});
@@ -31,14 +31,14 @@ test('payment creation requires a valid signed-in account and configured merchan
 test('payment order ignores caller prices and uses the server invoice for SDK configuration',async()=>{
  let args;const db={auth:{getUser:async()=>({data:{user:{id:'user',email:'test@example.com',phone:'+264818083704'}}})},rpc:async(name,input)=>{args={name,input};return {data:{invoice_id:invoice,plan:'annual',amount:360,town:'Okahandja'}};}};
  const res=response();await createOrderHandler({env,client:()=>db})(orderReq({plan:'annual',town:'Okahandja',amount:1,user_id:'another'}),res);
- assert.equal(res.code,200);assert.deepEqual(args,{name:'create_subscription_order',input:{p_plan:'annual',p_town:'Okahandja'}});assert.equal(res.body.checkout.amount_nad,360);assert.equal(res.body.checkout.invoice_id,invoice);assert.equal(res.body.checkout.idempotency_key,'seekgrn-'+invoice);
+ assert.equal(res.code,200);assert.deepEqual(args,{name:'create_subscription_order',input:{p_plan:'annual',p_town:'Okahandja'}});assert.equal(res.body.checkout.amount_nad,360);assert.equal(res.body.checkout.invoice_id,invoice);assert.equal(res.body.checkout.redirect_url,'https://www.paysme.site/payment/return');assert.equal(res.body.checkout.idempotency_key,'seekgrn-'+invoice);
  assert.doesNotMatch(JSON.stringify(res.body),/private-signing-key|private-server-key/);
 });
 test('invalid plan and town are rejected before creating an order',async()=>{
  for(const body of [{plan:'toString',town:'Windhoek'},{plan:'annual',town:''},{plan:'annual',town:'<script>'}]){const res=response();await createOrderHandler({env,client:()=>assert.fail()})(orderReq(body),res);assert.equal(res.code,400);}
 });
 test('only raw-body HMAC signed paid NAD events for this merchant reach activation',async()=>{
- let calls=0;const db={rpc:async(name,args)=>{calls++;assert.equal(name,'apply_subscription_payment');assert.equal(args.p_amount,360);return {data:{replayed:false}};}};
+ let calls=0;const db={rpc:async(name,args)=>{calls++;assert.equal(name,'apply_subscription_payment');assert.equal(args.p_amount,360);assert.equal(args.p_currency,'NAD');return {data:{replayed:false}};}};
  assert.equal((await notify(paid,{},db)).code,200);assert.equal(calls,1);
  for(const event of [{...paid,currency:'USD'},{...paid,merchant_id:'another'},{...paid,status:'pending'},{...paid,amount:0},{...paid,transaction_id:''}])assert.equal((await notify(event,{},db)).code,400);
  const unsigned=await notify(paid,{headers:{}},db);assert.equal(unsigned.code,401);

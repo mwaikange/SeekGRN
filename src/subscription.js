@@ -1,6 +1,7 @@
 import {supabase,user,isAdmin,decode,encode} from './backend.js';
 import {planList,PLANS,regularSubscriber} from './subscription-plans.js';
 import {icon} from './icons.js';
+import {hostedPaymentUrl,pendingReturnInvoice,returnInvoiceKey} from './payment-config.js';
 const safe=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date=v=>v?new Date(v).toLocaleDateString('en-GB',{timeZone:'Africa/Windhoek'}):'';
 export async function subscriptionStatus(){
@@ -15,7 +16,7 @@ export async function savePreparedPack(bundle){
 }
 export function subscriptionPage(){
  if(!regularSubscriber(user,isAdmin))return '';
- return '<section class="wrap subscription-page"><div class="page-head"><span class="eyebrow">YOUR APPLICATION WORKSPACE</span><h1>Subscription</h1><p>Choose the preparation allowance that fits your job search.</p></div><div class="panel allowance-panel"><div>'+icon('subscription',24)+'<h2>Your allowance</h2></div><p id="subscription-status" role="status">Loading your allowance…</p><button class="button quiet" id="refresh-subscription" type="button">Refresh status</button></div><div class="subscription-grid">'+planList.map(p=>'<article class="panel price-card"><span class="eyebrow">'+p.name+'</span><h2>N$'+p.monthly+'<small> / month</small></h2><p class="plan-total">'+(p.months===1?'N$50 billed monthly':'N$'+p.monthly+' × '+p.months+' months = <strong>N$'+p.total+'</strong>')+'</p><span class="saving-tag">'+(p.saving?'Save N$'+p.saving+' ('+Math.round(p.saving/(50*p.months)*100)+'%)':'Flexible monthly access')+'</span><p class="plan-quota">'+(p.quota?p.quota+' preparations per month':'Unlimited preparations')+'</p><button type="button" class="button primary" data-plan="'+p.id+'">Pay via PaySME '+icon('arrow')+'</button></article>').join('')+'</div><p class="subscription-explainer">Everyone gets one free preparation, with or without a subscription. One preparation includes the employment form and health questionnaire for one vacancy. Regenerating or downloading the same vacancy pack is free. Removing documents does not restore an allowance.</p><p class="subscription-explainer">Monthly allowances reset on your subscription anniversary; unused preparations do not roll over. Six-month and annual packages are paid upfront. Renewals and package changes start after your current paid term. Payment is confirmed before access activates.</p><div id="subscription-checkout" class="panel subscription-checkout" hidden></div></section>';
+ return '<section class="wrap subscription-page"><div class="page-head"><span class="eyebrow">YOUR APPLICATION WORKSPACE</span><h1>Subscription</h1><p>Choose the preparation allowance that fits your job search.</p></div><p id="payment-return-status" class="notice" role="status" hidden></p><div class="panel allowance-panel"><div>'+icon('subscription',24)+'<h2>Your allowance</h2></div><p id="subscription-status" role="status">Loading your allowance…</p><button class="button quiet" id="refresh-subscription" type="button">Refresh status</button></div><div class="subscription-grid">'+planList.map(p=>'<article class="panel price-card"><span class="eyebrow">'+p.name+'</span><h2>N$'+p.monthly+'<small> / month</small></h2><p class="plan-total">'+(p.months===1?'N$50 billed monthly':'N$'+p.monthly+' × '+p.months+' months = <strong>N$'+p.total+'</strong>')+'</p><span class="saving-tag">'+(p.saving?'Save N$'+p.saving+' ('+Math.round(p.saving/(50*p.months)*100)+'%)':'Flexible monthly access')+'</span><p class="plan-quota">'+(p.quota?p.quota+' preparations per month':'Unlimited preparations')+'</p><button type="button" class="button primary" data-plan="'+p.id+'">Pay via PaySME '+icon('arrow')+'</button></article>').join('')+'</div><p class="subscription-explainer">Everyone gets one free preparation, with or without a subscription. One preparation includes the employment form and health questionnaire for one vacancy. Regenerating or downloading the same vacancy pack is free. Removing documents does not restore an allowance.</p><p class="subscription-explainer">Monthly allowances reset on your subscription anniversary; unused preparations do not roll over. Six-month and annual packages are paid upfront. Renewals and package changes start after your current paid term. Payment is confirmed before access activates.</p><div id="subscription-checkout" class="panel subscription-checkout" hidden></div></section>';
 }
 let sdkPromise;
 export function loadPaySME(win=window,doc=document){
@@ -32,18 +33,34 @@ export function loadPaySME(win=window,doc=document){
  sdkPromise.catch(()=>{sdkPromise=undefined;});
  return sdkPromise;
 }
-export function hostedCheckout(checkout){
- const url=new URL('https://paysme.site/pay/'+encodeURIComponent(checkout.vendor_uuid));
- for(const [k,v] of Object.entries({invoice_id:checkout.invoice_id,amount:checkout.amount_nad,product_name:'SeekGRNJobs subscription',mobile:checkout.mobile,email:checkout.email,town:checkout.town,redirect_url:location.origin+'/#subscription'}))url.searchParams.set(k,String(v));
- return url.href;
-}
+export const hostedCheckout=hostedPaymentUrl;
 export function mountSubscription(container,onStatus=()=>{}){
  let alive=true,timer,busy=false;
  const applicantId=user?.id;
  const active=()=>alive&&container.isConnected&&user?.id===applicantId;
+ let invoice=pendingReturnInvoice(sessionStorage);
+ const returnMessage=container.querySelector('#payment-return-status');
+ let checkingInvoice=false,invoicePolls=0;
+ async function refreshInvoice(){
+  if(!invoice||!active()||checkingInvoice)return;
+  checkingInvoice=true;returnMessage.hidden=false;
+  const requestedInvoice=invoice;
+  try{
+   const {data}=await supabase.auth.getSession();if(!active())return;
+   const token=data.session?.access_token;if(!token)throw Error('Sign in with the account used for this payment.');
+   const response=await fetch('/api/subscription-status?invoice_id='+encodeURIComponent(requestedInvoice),{headers:{Authorization:'Bearer '+token},cache:'no-store'});
+   const result=await response.json();if(!active()||invoice!==requestedInvoice)return;
+   if(!response.ok)throw Error(result.error||'Unable to check your payment.');
+   if(result.order?.invoice_id!==requestedInvoice)throw Error('Unable to match this payment. Please refresh its status.');
+   const paid=result.order.status==='paid';
+   returnMessage.textContent=paid?'Payment confirmed for '+invoice+'. Your package details are shown below.':'Awaiting payment confirmation for '+invoice+'. You can refresh this page after completing payment.';
+   if(paid)clearInterval(timer);
+  }catch(error){if(active())returnMessage.textContent=error.message;}finally{checkingInvoice=false;if(active()&&invoice!==requestedInvoice)void refreshInvoice();}
+ }
  const output=container.querySelector('#subscription-status');
  async function refresh(){
   if(!active())return;
+  void refreshInvoice();
   try{
    const s=await subscriptionStatus();if(!active())return;onStatus(s);
    const p=PLANS[s.plan];
@@ -71,6 +88,7 @@ export function mountSubscription(container,onStatus=()=>{}){
     const response=await fetch('/api/subscription',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({plan:plan.id,town:new FormData(event.target).get('town')})});
     const result=await response.json();if(!active())return;
     if(!response.ok)throw Error(result.error||'Unable to prepare payment.');
+    invoice=result.order.invoice_id;invoicePolls=0;sessionStorage.setItem(returnInvoiceKey,invoice);void refreshInvoice();
     message.textContent='Loading PaySME…';
     const fallback=panel.querySelector('#paysme-fallback');fallback.href=hostedCheckout(result.checkout);
     let sdk;
@@ -88,5 +106,6 @@ export function mountSubscription(container,onStatus=()=>{}){
   };
  };
  void refresh();
+ if(invoice)timer=setInterval(()=>{if(++invoicePolls>24){clearInterval(timer);return;}if(document.visibilityState==='visible')void refresh();},5000);
  return ()=>{alive=false;clearInterval(timer);window.removeEventListener('focus',focusRefresh);document.removeEventListener('visibilitychange',focusRefresh);};
 }
