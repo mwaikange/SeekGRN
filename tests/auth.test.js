@@ -73,11 +73,11 @@ test('SMSPortal hook rejects unsigned requests without sending an SMS',async()=>
 test('SMSPortal sends the Supabase code to the pending new phone with server credentials',async()=>{
  let outgoing;const handler=smsPortalHandler({clientId:'client',apiSecret:'secret',
   verify:()=>({user:{phone:'264811111111',phone_change:'+264818083704'},sms:{otp:'123456'}}),
-  fetcher:async(url,options)=>{outgoing={url,options};return Response.json({errorReport:{noOfErrors:0}});}});
+  fetcher:async(url,options)=>{outgoing={url,options};return Response.json({Messages:1,EventId:'9876543210',ErrorReport:{NoNetwork:0,Duplicates:0,OptedOuts:0,Faults:[]}});}});
  assert.equal((await handler(new Request('https://example.com',{method:'POST',body:'{}'}))).status,200);
- assert.equal(outgoing.url,'https://rest.smsportal.com/v3/BulkMessages');
+ assert.equal(outgoing.url,'https://rest.smsportal.com/v1/bulkmessages');
  assert.equal(outgoing.options.headers.Authorization,'Basic '+btoa('client:secret'));
- const body=JSON.parse(outgoing.options.body);assert.equal(body.messages[0].destination,'264818083704');assert.match(body.messages[0].content,/123456/);
+ const body=JSON.parse(outgoing.options.body);assert.equal(body.messages[0].destination,'+264818083704');assert.match(body.messages[0].content,/123456/);
  assert.equal(body.sendOptions,undefined);
 });
 test('SMSPortal failure never reports a code as delivered or exposes provider details',async()=>{
@@ -89,16 +89,16 @@ test('SMSPortal failure never reports a code as delivered or exposes provider de
 test('SMSPortal accepts the Supabase new_phone payload when adding a mobile to an email account',async()=>{
  let outgoing;
  const event={user:{id:'email-account',email:'example@example.com',email_confirmed_at:'2026-11-18T08:00:00Z',phone:'',new_phone:'264818083704',is_anonymous:false},sms:{otp:'123456'}};
- const handler=smsPortalHandler({clientId:'client',apiSecret:'secret',verify:payload=>JSON.parse(payload),fetcher:async(url,options)=>{outgoing=JSON.parse(options.body);return Response.json({errorReport:{noOfErrors:0}});}});
+ const handler=smsPortalHandler({clientId:'client',apiSecret:'secret',verify:payload=>JSON.parse(payload),fetcher:async(url,options)=>{outgoing=JSON.parse(options.body);return Response.json({Messages:1,EventId:'9876543210',ErrorReport:{NoNetwork:0,Duplicates:0,OptedOuts:0,Faults:[]}});}});
  const response=await handler(new Request('https://example.com',{method:'POST',body:JSON.stringify(event)}));
- assert.equal(response.status,200);assert.deepEqual(await response.json(),{});assert.equal(outgoing.messages[0].destination,'264818083704');
+ assert.equal(response.status,200);assert.deepEqual(await response.json(),{});assert.equal(outgoing.messages[0].destination,'+264818083704');
 });
 
 test('SMSPortal uses new_phone before the old number and supports ordinary mobile sign-in',async()=>{
  for(const user of [{phone:'264811111111',new_phone:'+264818083704'},{phone:'264811111111',phone_change:'264822222222',new_phone:'+264818083704'},{phone:'+264818083704'}]){
   let destination;
-  const handler=smsPortalHandler({clientId:'client',apiSecret:'secret',verify:()=>({user,sms:{otp:'123456'}}),fetcher:async(url,options)=>{destination=JSON.parse(options.body).messages[0].destination;return Response.json({errorReport:{noOfErrors:0}});}});
-  assert.equal((await handler(new Request('https://example.com',{method:'POST',body:'{}'}))).status,200);assert.equal(destination,'264818083704');
+  const handler=smsPortalHandler({clientId:'client',apiSecret:'secret',verify:()=>({user,sms:{otp:'123456'}}),fetcher:async(url,options)=>{destination=JSON.parse(options.body).messages[0].destination;return Response.json({Messages:1,EventId:'9876543210',ErrorReport:{NoNetwork:0,Duplicates:0,OptedOuts:0,Faults:[]}});}});
+  assert.equal((await handler(new Request('https://example.com',{method:'POST',body:'{}'}))).status,200);assert.equal(destination,'+264818083704');
  }
 });
 
@@ -120,12 +120,12 @@ test('SMSPortal message rejection and timeouts remain structured errors instead 
 });
 
 test('SMS diagnostics distinguish provider HTTP failures without logging request or response secrets',async()=>{
- for(const [status,code] of [[400,'SMS-REQUEST'],[401,'SMS-AUTH'],[403,'SMS-AUTH'],[429,'SMS-RATE-LIMIT'],[500,'SMS-PROVIDER']]){
+ for(const [status,code] of [[400,'SMS-REQUEST'],[401,'SMS-AUTH'],[403,'SMS-ACCESS'],[429,'SMS-RATE-LIMIT'],[500,'SMS-PROVIDER']]){
   const logs=[];
   const handler=smsPortalHandler({clientId:'private-client',apiSecret:'private-api-key',logger:entry=>logs.push(entry),verify:()=>({user:{new_phone:'264818083704'},sms:{otp:'123456'}}),fetcher:async()=>new Response('secret provider body with 123456 and 264818083704',{status})});
   const response=await handler(new Request('https://example.com',{method:'POST',body:'{}'}));const body=await response.json();
   assert.equal(response.status,200);assert.equal(body.error.http_code,502);assert.match(body.error.message,new RegExp(code));
-  assert.deepEqual(logs,[{component:'smsportal-otp',code,stage:'provider_http',httpStatus:status}]);
+  assert.equal(logs.at(-1).component,'smsportal-otp');assert.equal(logs.at(-1).code,code);assert.equal(logs.at(-1).httpStatus,status);
   assert.doesNotMatch(JSON.stringify({logs,body}),/private-client|private-api-key|123456|264818083704|secret provider body/);
  }
 });

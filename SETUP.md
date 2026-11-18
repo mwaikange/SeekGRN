@@ -21,50 +21,13 @@ In **Authentication → Email Templates**, paste [supabase/templates/otp.html](s
 
 Use subject **Your SeekGRNJobs verification code**. The required variable is `{{ .Token }}`. The frontend accepts numeric OTPs; changing JavaScript alone cannot change hosted email templates. Keep email confirmation enabled. Configure custom SMTP for delivery to public users; the built-in sender has recipient and rate restrictions. In **Authentication → URL Configuration**, set Site URL to `https://seek-grn.vercel.app` and allow `https://seek-grn.vercel.app/` and your specific development/preview redirect URLs.
 
-## 3. Connect SMSPortal
+## 3. Connect SMSPortal — revised using the supplied guide
 
-The SMSPortal integration is a Supabase **Send SMS Auth Hook**. Supabase generates and verifies the OTP; the server function only delivers it. Its endpoint rejects requests without a valid Supabase hook signature. API credentials never belong in Vite variables or browser code.
+Follow [SMS_SETUP.md](SMS_SETUP.md) for the complete replacement. Run scripts/sms-logs.sql, then replace BOTH index.ts and handler.js in the existing smsportal-otp Edge Function and deploy with Verify JWT OFF. Keep the existing function URL and the three SMSPortal/hook secrets. Supabase supplies the built-in server variables for audit writes.
 
-1. In SMSPortal, activate a REST API key and copy its Client ID and API Secret. Ensure the account has credit and supports delivery to Namibian numbers.
-2. In Supabase **Edge Functions**, create a function named `smsportal-otp`. Copy both files from [supabase/functions/smsportal-otp](supabase/functions/smsportal-otp): `index.ts` and `handler.js`. Deploy with **Verify JWT disabled** for this hook endpoint. The function verifies its webhook signature instead. The repository's `supabase/config.toml` includes that setting for a future CLI deployment.
-3. In **Authentication → Hooks**, add a **Send SMS** HTTP hook with URL `https://dmrtrkhjlarjzhaxyflf.supabase.co/functions/v1/smsportal-otp`. Generate/copy its signing secret. Keep the hook disabled until the function secrets are saved.
-4. In **Edge Functions → Secrets**, add these exact names privately:
+The sender now uses https://rest.smsportal.com/v1/bulkmessages, Basic authentication and +264 destination format. Supabase still generates and verifies the OTP. Audit rows use the existing app_admins role and omit OTP/message bodies and full phone numbers. The script stops rather than overwriting an incompatible existing sms_logs table.
 
-   | Name | Value |
-   | --- | --- |
-   | `SMSPORTAL_CLIENT_ID` | SMSPortal Client ID |
-   | `SMSPORTAL_API_SECRET` | SMSPortal API Secret |
-   | `SEND_SMS_HOOK_SECRET` | Full generated Supabase hook signing secret |
-
-5. Enable the Send SMS hook and **Authentication → Sign In / Providers → Phone**. Keep phone confirmation enabled. The custom hook delivers messages instead of the default SMS provider. Do not set phone auto-confirm or fixed test OTPs in production. Set OTP expiry and resend limits appropriate to the service (for example, five minutes and at least 60 seconds).
-6. From the app, sign in and open My account → Complete contact verification. An already confirmed email should show a check mark; send only the mobile SMS code in that case. Confirm the same Auth user has both email_confirmed_at and phone_confirmed_at. Test wrong and expired codes too, then test mobile sign-in.
-
-The hook uses SMSPortal v3 `BulkMessages` and Basic authentication. No SMS was sent and no credit was consumed in development tests. Actual delivery requires the credentials and activation above. [SMSPortal quickstart](https://docs.smsportal.com/docs/quickstart) · [Supabase Send SMS hook](https://supabase.com/docs/guides/auth/auth-hooks/send-sms-hook).
-
-### Fix an Invalid payload sent to hook error when adding a phone
-
-The hook must read user.new_phone for a pending mobile number; phone_change is the database field name, while Auth serializes it as new_phone. The handler keeps the old field as a compatibility fallback and reads user.phone for normal mobile sign-in. It does not read a phone from editable user metadata.
-
-In Supabase → Edge Functions → smsportal-otp → Code, replace only handler.js with the repository version and deploy the function again. Leave index.ts, the three existing secrets and the Send SMS hook URL unchanged. Keep Verify JWT OFF; the function verifies the webhook signature. No SQL or account changes are needed.
-
-A GitHub/Vercel deployment updates the website but does not deploy this Supabase function. Retest Send SMS code after saving the new function version. Signed validation/delivery failures use the structured Auth error envelope so the app can show the error; unsigned requests still receive HTTP 401.
-
-### Diagnose a 502 while sending an SMS
-
-A gateway log for PUT /auth/v1/user only shows that Auth failed. It does not include the SMSPortal HTTP response. Replace handler.js with the complete repository file and deploy the Supabase function, then press Send SMS code once. Copy the reference code displayed in the app, or the new matching JSON entry from Edge Functions → smsportal-otp → Logs. No index.ts or secret changes are needed.
-
-| Reference | Meaning / next check |
-| --- | --- |
-| SMS-AUTH (HTTP 401/403 in function logs) | Authentication or API access rejected. Check the active REST key and its matching Client ID/Secret; check any IP whitelist restrictions. |
-| SMS-REQUEST (HTTP 400) | Provider request validation failed. |
-| SMS-RATE-LIMIT (HTTP 429) | Wait and check API rate limits. |
-| SMS-PROVIDER | Provider HTTP failure; check the logged status. |
-| SMS-REJECTED | HTTP succeeded but the provider reported message errors. Inspect account credit, sending permissions and the provider's own records. |
-| SMS-TIMEOUT / SMS-NETWORK | Sending could not be confirmed. Do not automatically retry: the provider may already have received the message. |
-| SMS-RESPONSE | Provider response could not be read or validated; delivery is unconfirmed. |
-| SMS-ACCEPTED | The API accepted the request; check SMSPortal delivery reports if the handset receives nothing. |
-
-Diagnostic entries include a component field of smsportal-otp, a code, stage and numeric httpStatus where available. Logs never include OTPs, phone numbers, credentials or raw request/response bodies.
+Use scripts/test-smsportal.ps1 for a private test-mode provider check. It sends no actual message unless -Live is explicitly selected. Do not test an unlinked number through logged-out phone-only sign-in: sign into its existing email account first, then request verification of that account's mobile.
 
 ## 4. Apple sign-in
 
