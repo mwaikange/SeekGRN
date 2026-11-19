@@ -282,9 +282,9 @@ html{scroll-padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
 .allowance-heading,.allowance-title{display:flex;align-items:center;gap:10px}
 .allowance-heading{justify-content:space-between;flex-wrap:wrap;margin-bottom:10px}
 .allowance-panel h2{font-family:inherit;font-size:20px;margin:0}
-.allowance-panel.is-active{background:#fae17a;border-color:#e3c752;color:var(--green)}
-.allowance-pill{display:inline-flex;align-items:center;padding:5px 10px;border:1px solid #b59d3a;border-radius:999px;background:#fff3b1;color:var(--green);font-size:13px;font-weight:700}
-.allowance-panel.is-active .button.quiet{color:var(--green);border-color:#b59d3a}
+.allowance-panel.is-active{--allowance-olive:#222b25;background:#f0b429;border-color:var(--allowance-olive);color:var(--allowance-olive)}
+.allowance-pill{display:inline-flex;align-items:center;padding:5px 10px;border:1px solid var(--allowance-olive);border-radius:999px;background:var(--allowance-olive);color:#fff;font-size:13px;font-weight:700}
+.allowance-panel.is-active .button.quiet{color:var(--allowance-olive);border-color:var(--allowance-olive)}
 .allowance-panel [hidden]{display:none}
 .subscription-explainer{color:var(--muted);line-height:1.65;max-width:850px;font-size:14px}
 .subscription-page a{overflow-wrap:anywhere}
