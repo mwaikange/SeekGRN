@@ -1,3 +1,5 @@
+import {paySMECode} from '../src/paysme-code.js';
+
 const TRANSACTIONS_URL = 'https://zvoqrqdnuupdefsuiurt.supabase.co/rest/v1/transactions';
 
 export function closedInvoiceStatus(status) {
@@ -7,12 +9,12 @@ export function closedInvoiceStatus(status) {
 }
 
 // An unconfirmed, missing or still payable invoice must keep the purchase lock.
-export async function readClosedInvoice(env, order, fetcher = fetch) {
+export async function readPaySMEInvoice(env, order, fetcher = fetch) {
   const key = env.PAYSME_TRANSACTION_READ_KEY?.trim();
   if (!key || !env.PAYSME_MERCHANT_ID?.trim()) return null;
   const url = new URL(TRANSACTIONS_URL);
   url.search = new URLSearchParams({
-    select: 'status,amount',
+    select: 'status,amount,generated_code',
     merchant_id: 'eq.' + env.PAYSME_MERCHANT_ID.trim(),
     invoice_id: 'eq.' + order.invoice_id,
     limit: '2'
@@ -23,5 +25,5 @@ export async function readClosedInvoice(env, order, fetcher = fetch) {
   if (!response.ok) throw new Error('PaySME transaction status is unavailable.');
   const rows = await response.json();
   if (!Array.isArray(rows) || rows.length !== 1 || Number(rows[0]?.amount) !== Number(order.amount)) return null;
-  return closedInvoiceStatus(rows[0].status);
+  return {closed:closedInvoiceStatus(rows[0].status),code:paySMECode(rows[0].generated_code)};
 }

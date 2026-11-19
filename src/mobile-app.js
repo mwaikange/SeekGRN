@@ -54,8 +54,8 @@ export function openMobileOAuth(url) {
  return request('oauth-sign-in',{url});
 }
 
-export async function pickMobileUpload(kind) {
- const selection=await request(kind==='signature'?'pick-photo':'pick-pdf');
+export async function pickMobileCircular() {
+ const selection=await request('pick-pdf');
  if(!selection)return null;
  const bytes=Uint8Array.from(atob(selection.base64),character=>character.charCodeAt(0));
  return new File([bytes],selection.name,{type:selection.type});

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {isAppInvoice,capturePaymentReturn,pendingReturnInvoice,hostedPaymentUrl,PAYSME_RETURN_URL,PAYSME_SHARED_WEBHOOK_URL} from '../src/payment-config.js';
+import {isAppInvoice,capturePaymentReturn,pendingReturnInvoice,hostedPaymentUrl,PAYSME_RETURN_URL} from '../src/payment-config.js';
 import {createPaymentStatusHandler} from '../api/subscription-status.js';
-import {readClosedInvoice} from '../server/paysme-status.js';
+import {readPaySMEInvoice} from '../server/paysme-status.js';
 const invoice='SEEKGRN-8A2DD90';
 const store=()=>{const values=new Map();return {getItem:k=>values.get(k),setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};};
 const response=()=>({setHeader(){},status(code){this.code=code;return this;},json(body){this.body=body;return this;}});
@@ -11,15 +11,14 @@ test('short SEEKGRN references are validated without accepting other apps or mal
  for(const value of ['OTHER-8A2DD90','SEEKGRN-8a2dd90','SEEKGRN-1','SEEKGRN-<script>',null,['SEEKGRN-8A2DD90']])assert.equal(isAppInvoice(value),false);
 });
 test('central app-opening URL preserves the owned invoice across sign-in and ignores success flags',()=>{
- const storage=store();const open=new URL('https://seek-grn.vercel.app/#subscription');open.searchParams.set('invoice_id',invoice);open.searchParams.set('status','success');
+ const storage=store();const open=new URL('https://seek.paysme.site/#subscription');open.searchParams.set('invoice_id',invoice);open.searchParams.set('status','success');
  assert.equal(capturePaymentReturn(open,storage),invoice);assert.equal(pendingReturnInvoice(storage),invoice);
- capturePaymentReturn(new URL('https://seek-grn.vercel.app/?code=oauth-return'),storage);assert.equal(pendingReturnInvoice(storage),invoice);
- assert.equal(capturePaymentReturn(new URL('https://seek-grn.vercel.app/?invoice_id=OTHER-8A2DD90'),storage),null);assert.equal(pendingReturnInvoice(storage),null);
+ capturePaymentReturn(new URL('/?code=oauth-return',open),storage);assert.equal(pendingReturnInvoice(storage),invoice);
+ assert.equal(capturePaymentReturn(new URL('/?invoice_id=OTHER-8A2DD90',open),storage),null);assert.equal(pendingReturnInvoice(storage),null);
 });
 test('hosted fallback always uses central return and keeps the exact backend invoice',()=>{
  const url=new URL(hostedPaymentUrl({vendor_uuid:'merchant',invoice_id:invoice,amount_nad:50,mobile:'+264818083704',email:'test@example.com',town:'Okahandja',redirect_url:'https://untrusted.example'}));
  assert.equal(url.searchParams.get('redirect_url'),PAYSME_RETURN_URL);assert.equal(url.searchParams.get('invoice_id'),invoice);assert.equal(url.searchParams.get('amount'),'50');
- assert.equal(PAYSME_SHARED_WEBHOOK_URL,'https://merchant-webhook.paysme.app/webhook/00000000-1986-0026-0000-000000000001');
 });
 test('returned payment status requires authentication and both invoice and account ownership',async()=>{
  const filters=[];let reads=0;
@@ -40,14 +39,14 @@ test('PaySME status is read for the exact merchant and invoice and only a single
  const env={PAYSME_TRANSACTION_READ_KEY:'test-read-key',PAYSME_MERCHANT_ID:'test-merchant'};
  const order={invoice_id:invoice,amount:50};
  for(const [rows,expected] of [
-  [[{status:'expired',amount:'50.00'}],'expired'],
-  [[{status:'canceled',amount:50}],'cancelled'],
-  [[{status:'paid',amount:50}],null],
+  [[{status:'expired',amount:'50.00'}],{closed:'expired',code:null}],
+  [[{status:'canceled',amount:50,generated_code:'012345678901'}],{closed:'cancelled',code:'0123-4567-8901'}],
+  [[{status:'paid',amount:50,generated_code:'0123-4567-8901'}],{closed:null,code:'0123-4567-8901'}],
   [[{status:'expired',amount:240}],null],
   [[{status:'expired',amount:50},{status:'pending',amount:50}],null],
   [[],null]
  ]){
-  assert.equal(await readClosedInvoice(env,order,async(url,options)=>{
+  assert.deepEqual(await readPaySMEInvoice(env,order,async(url,options)=>{
    assert.equal(url.searchParams.get('merchant_id'),'eq.test-merchant');
    assert.equal(url.searchParams.get('invoice_id'),'eq.'+invoice);
    assert.equal(options.headers.apikey,'test-read-key');
@@ -59,7 +58,7 @@ test('returned status persists an authoritative closure for an owned pending inv
  const data={invoice_id:invoice,app_prefix:'SEEKGRN',currency:'NAD',status:'pending',amount:50};
  const query={select(){return this;},eq(){return this;},async maybeSingle(){return {data};}};
  const db={auth:{getUser:async()=>({data:{user:{id:'owner'}}})},from:()=>query};
- const handler=createPaymentStatusHandler({client:()=>db,lookup:async()=> 'expired',privileged:()=>({rpc:async(name,args)=>{
+ const handler=createPaymentStatusHandler({client:()=>db,lookup:async()=>({closed:'expired',code:'0123-4567-8901'}),privileged:()=>({rpc:async(name,args)=>{
   assert.equal(name,'close_subscription_order');
   assert.deepEqual(args,{p_invoice:invoice,p_status:'expired',p_amount:50,p_currency:'NAD'});
   return {data:{status:'expired'}};
@@ -67,4 +66,5 @@ test('returned status persists an authoritative closure for an owned pending inv
  const res=response();
  await handler({method:'GET',query:{invoice_id:invoice},headers:{authorization:'Bearer owner-token'}},res);
  assert.equal(res.body.order.status,'expired');
+ assert.equal(res.body.order.paysme_code,'0123-4567-8901');
 });

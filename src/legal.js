@@ -13,7 +13,7 @@ const pages={
       ],
       [
         "Your applicant information",
-        "You are responsible for the information and documents you provide. You allow us to process them to verify your account, save your profile and prepare the forms you request. Enter sensitive health details and upload your signature only if you want them included in your forms. We do not sell your applicant information."
+        "You are responsible for the information you provide. You allow us to process it to verify your account, save your profile and prepare the forms you request. Enter the health details required for your application. We do not sell your applicant information."
       ],
       [
         "Preparing and submitting applications",
@@ -51,11 +51,11 @@ const pages={
       ],
       [
         "Applicant and sensitive information",
-        "Your profile may include your name, identity or passport number, date of birth, address, contact details, citizenship, employment history, qualifications, languages, references and declarations. If you complete the health questionnaire, we process the health information you enter. You may also upload a completed form or signature. Prepared application and health PDFs contain the details you choose to include. Enter only information needed for your application and avoid providing another person’s details without permission."
+        "Your profile may include your name, identity or passport number, date of birth, address, contact details, citizenship, employment history, qualifications, languages, references and declarations. If you complete the health questionnaire, we process the health information you enter. Prepared application and health PDFs contain the details you choose to include. Enter only information needed for your application and avoid providing another person’s details without permission."
       ],
       [
         "App activity and device access",
-        "We process account access, request timing, error and security information needed to operate, protect and troubleshoot the service. When you choose to upload a document or signature, the file picker is used for that action. Downloads and sharing use the destination you select. The current application preparation features do not require background access to your contacts, SMS inbox, microphone or location."
+        "We process account access, request timing, error and security information needed to operate, protect and troubleshoot the service. Downloads and sharing use the destination you select. The current application preparation features do not require background access to your contacts, SMS inbox, microphone or location."
       ],
       [
         "Why we use information",

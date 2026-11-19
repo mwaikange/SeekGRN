@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHmac} from 'node:crypto';
-import {PLANS,regularSubscriber,preparationAvailable} from '../src/subscription-plans.js';
+import {PLANS,annualSavings,monthlyYearCost,regularSubscriber,preparationAvailable} from '../src/subscription-plans.js';
 import {createOrderHandler} from '../server/subscriptions.js';
 import {createWebhookHandler} from '../api/paysme-webhook.js';
 const merchant='123e4567-e89b-42d3-a456-426614174000';
@@ -17,8 +17,11 @@ async function notify(event,mutate={},db={rpc:async()=>({data:{replayed:false}})
  const res=response();await createWebhookHandler({env,client:()=>db,readBody:async()=>raw})(req,res);return res;
 }
 test('subscription prices, savings, allowances and role visibility match requested packages',()=>{
- assert.deepEqual(Object.values(PLANS).map(p=>[p.monthly,p.months,p.total,p.quota,p.saving]),[[50,1,50,20,0],[40,6,240,30,60],[30,12,360,null,240]]);
- for(const p of Object.values(PLANS)){assert.equal(p.monthly*p.months,p.total);assert.equal(50*p.months-p.total,p.saving);}
+ assert.deepEqual(Object.values(PLANS).map(p=>[p.monthly,p.months,p.total,p.quota]),[[50,1,50,20],[40,6,240,30],[30,12,360,null]]);
+ for(const p of Object.values(PLANS))assert.equal(p.monthly*p.months,p.total);
+ assert.equal(monthlyYearCost,600);
+ assert.deepEqual(annualSavings(PLANS.biannual),{amount:120,percent:20});
+ assert.deepEqual(annualSavings(PLANS.annual),{amount:240,percent:40});
  assert.equal(regularSubscriber({id:'user'},false),true);assert.equal(regularSubscriber({id:'admin'},true),false);assert.equal(regularSubscriber(null,false),false);
  assert.equal(preparationAvailable({remaining:0,free_remaining:1}),true);assert.equal(preparationAvailable({remaining:0,free_remaining:0}),false);assert.equal(preparationAvailable({unlimited:true}),true);
 });

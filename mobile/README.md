@@ -47,7 +47,7 @@ npx eas-cli@latest project:info
 npx eas-cli@latest build --platform android --profile preview
 ```
 
-Sign in to the Expo account that owns the linked project. The first build prompts for an Android keystore if the project has no existing credentials. Download the APK from the finished build and install it on the phone. Test email and SMS sign-in, Browse, PDF import, PNG/JPEG signature import, preparing and opening a form, saving to a selected folder, and sharing an attachment. The test APK retains PaySME's website payment request flow.
+Sign in to the Expo account that owns the linked project. The first build prompts for an Android keystore if the project has no existing credentials. Download the APK from the finished build and install it on the phone. Test email and SMS sign-in, Browse, entering and confirming an applicant profile, preparing and opening an unsigned form, saving to a selected folder, and sharing an attachment. The test APK retains PaySME's website payment request flow.
 
 ## 4. Build the Google Play AAB
 

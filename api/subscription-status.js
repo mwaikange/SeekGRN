@@ -1,8 +1,8 @@
 import {database} from '../server/subscriptions.js';
 import {isAppInvoice} from '../src/payment-config.js';
-import {readClosedInvoice} from '../server/paysme-status.js';
+import {readPaySMEInvoice} from '../server/paysme-status.js';
 export function createPaymentStatusHandler({
- env=process.env,client=token=>database(env,token),privileged=()=>database(env,null,true),lookup=order=>readClosedInvoice(env,order)
+ env=process.env,client=token=>database(env,token),privileged=()=>database(env,null,true),lookup=order=>readPaySMEInvoice(env,order)
 }={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','no-store');
@@ -19,15 +19,14 @@ export function createPaymentStatusHandler({
    if(error)return fail(503,'Unable to check your payment. Please try again.');
    if(!data||data.app_prefix!=='SEEKGRN'||data.currency!=='NAD')return fail(404,'This payment was not found in your account.');
    let order=data;
-   if(order.status==='pending'){
-    // Transient PaySME errors leave the last confirmed state in force.
-    const closed=await lookup(order).catch(()=>null);
-    if(closed){
-     const change=await privileged().rpc('close_subscription_order',{p_invoice:invoice,p_status:closed,p_amount:order.amount,p_currency:order.currency});
-     if(change.error)return fail(503,'Unable to refresh your payment. Please try again.');
-     order={...order,...change.data};
-    }
+   // Transient PaySME errors leave the last confirmed state in force.
+   const provider=await lookup(order).catch(()=>null);
+   if(order.status==='pending'&&provider?.closed){
+    const change=await privileged().rpc('close_subscription_order',{p_invoice:invoice,p_status:provider.closed,p_amount:order.amount,p_currency:order.currency});
+    if(change.error)return fail(503,'Unable to refresh your payment. Please try again.');
+    order={...order,...change.data};
    }
+   if(provider?.code)order={...order,paysme_code:provider.code};
    return res.status(200).json({order});
   }catch{return fail(503,'Unable to check your payment. Please try again.');}
  };

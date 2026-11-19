@@ -1,30 +1,23 @@
 import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths } from 'expo-file-system';
 import { deleteAsync, EncodingType, StorageAccessFramework } from 'expo-file-system/legacy';
-import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 
 const megabyte = 1024 * 1024;
 const uploadLimit = 15 * megabyte;
-const imageTypes = new Set(['image/png', 'image/jpeg']);
 const exportExtensions = { 'application/pdf': '.pdf', 'application/json': '.json' };
 
-export async function pickFile(image) {
-  const result = image
-    ? await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, exif: false, legacy: false })
-    : await DocumentPicker.getDocumentAsync({ type: 'application/pdf', copyToCacheDirectory: true });
+export async function pickFile() {
+  const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', copyToCacheDirectory: true });
   if (result.canceled) return null;
 
   const asset = result.assets[0];
   const file = new File(asset.uri);
-  const name = asset.fileName || asset.name || file.name;
-  const type = asset.mimeType || (image ? (/\.png$/i.test(name) ? 'image/png' : /\.jpe?g$/i.test(name) ? 'image/jpeg' : '') : 'application/pdf');
-  const limit = image ? 2 * megabyte : uploadLimit;
   try {
-    if (!file.exists || !file.size || file.size > limit || (image && !imageTypes.has(type))) {
-      throw new Error(image ? 'Choose a PNG or JPEG signature no larger than 2 MB.' : 'Choose a PDF no larger than 15 MB.');
+    if (!file.exists || !file.size || file.size > uploadLimit) {
+      throw new Error('Choose a PDF no larger than 15 MB.');
     }
-    return { name, type, base64: await file.base64() };
+    return { name: asset.name || file.name, type: asset.mimeType || 'application/pdf', base64: await file.base64() };
   } finally {
     if (file.uri.startsWith(Paths.cache.uri) && file.exists) file.delete();
   }

@@ -50,7 +50,6 @@ export async function prepareForms(profile, job, circular) {
    ['skin','joints','senses','heart','breathing','digestion','urinary','nerves','otherIllness'].forEach((key,i)=>{const page=i<5?0:1,y=[342,282,230,165,113,685,638,591,546][i];text(page,'X',profile[key]==='Yes'?201:259,y,12);if(profile[key]==='Yes')text(page,profile[key+'Details'],296,y,282);});
    text(1,'X',profile.impairment==='Yes'?534:570,486,12);text(1,'X',profile.disability==='Yes'?534:570,462,12);text(1,[profile.impairmentDetails,profile.disabilityDetails].filter(Boolean).join('; '),42,382,530);text(1,'X',profile.surgery==='Yes'?540:573,261,12);text(1,profile.surgeryDetails,42,218,530);text(1,date,418,89,150);
   }
-  if(profile.signature){const signature=profile.signature.startsWith('data:image/png')?await doc.embedPng(profile.signature):await doc.embedJpg(profile.signature);const dim=signature.scaleToFit(180,35);pages[1].drawImage(signature,{x:48,y:type==='application'?164:88,width:dim.width,height:dim.height});}
   files.push({label:type==='application'?'Application for employment 156043':'Health questionnaire 156094',name:type+'-'+job.id+'.pdf',blob:new Blob([await doc.save()],{type:'application/pdf'}),viewed:false,shared:false});
  }
  const disclosureLabels={

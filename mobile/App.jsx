@@ -160,8 +160,7 @@ export default function App() {
     busy.current = true;
     try {
       switch (message.action) {
-        case 'pick-photo': respond(await pickFile(true)); break;
-        case 'pick-pdf': respond(await pickFile(false)); break;
+        case 'pick-pdf': respond(await pickFile()); break;
         case 'save':
         case 'share': respond(await exportFile(message)); break;
       }

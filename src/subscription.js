@@ -1,8 +1,9 @@
 import {supabase,user,isAdmin,decode,encode} from './backend.js';
-import {planList,PLANS,regularSubscriber} from './subscription-plans.js';
+import {annualSavings,monthlyYearCost,planList,PLANS,regularSubscriber} from './subscription-plans.js';
 import {icon} from './icons.js';
 import {pendingReturnInvoice,returnInvoiceKey} from './payment-config.js';
 import {checkoutTown} from './paysme-towns.js';
+import {paySMECode} from './paysme-code.js';
 import {playStoreApp} from './mobile-app.js';
 
 const date=value=>new Date(value).toLocaleDateString('en-GB',{timeZone:'Africa/Windhoek'});
@@ -23,13 +24,16 @@ export async function savePreparedPack(bundle){
 
 export function subscriptionPage(){
  if(!regularSubscriber(user,isAdmin))return '';
- const cards=playStoreApp?'':planList.map(p=>`<article class="panel price-card">
+ const cards=playStoreApp?'':planList.map(p=>{
+  const {amount,percent}=annualSavings(p);
+  return `<article class="panel price-card">
   <span class="eyebrow">${p.name}</span><h2>N$${p.monthly}<small> / month</small></h2>
   <p class="plan-total">${p.months===1?'N$50 billed monthly':'N$'+p.monthly+' × '+p.months+' months = <strong>N$'+p.total+'</strong>'}</p>
-  <span class="saving-tag">${p.saving?'Save N$'+p.saving+' ('+Math.round(p.saving/(50*p.months)*100)+'%)':'Flexible monthly access'}</span>
+  <span class="saving-tag">${amount?'Save N$'+amount+' per year ('+percent+'%)':'Flexible monthly access'}</span>
   <p class="plan-quota">${p.quota?p.quota+' preparations per month':'Unlimited preparations'}</p>
   <div class="plan-request" data-plan="${p.id}"></div>
- </article>`).join('');
+ </article>`;
+ }).join('');
  return `<section class="wrap subscription-page">
   <div class="page-head"><span class="eyebrow">YOUR APPLICATION WORKSPACE</span><h1>Subscription</h1><p>${playStoreApp?'Check your access and remaining preparations.':'Choose a package and receive your payment link by SMS.'}</p></div>
   <div class="panel allowance-panel">
@@ -41,6 +45,7 @@ export function subscriptionPage(){
    <button class="button secondary" id="subscription-account-town" type="button" hidden>Set your town in My account</button>
   </div>
   ${cards?`<div class="subscription-grid">${cards}</div>`:''}
+  ${cards?`<p class="subscription-explainer">Savings are compared with 12 monthly payments of N$${PLANS.monthly.total} (N$${monthlyYearCost} per year).</p>`:''}
   <p class="subscription-explainer">Everyone gets one free preparation, with or without a subscription. One preparation includes the employment form and health questionnaire for one vacancy. Regenerating or downloading the same vacancy pack is free. Removing documents does not restore an allowance.</p>
   <p class="subscription-explainer">Monthly allowances reset on your subscription anniversary. Unused preparations expire.${playStoreApp?'':' Six-month and annual packages are paid upfront. You can choose a new package when your current subscription ends or your pending invoice is cancelled or expires. Payment is confirmed before access activates.'}</p>
  </section>`;
@@ -75,13 +80,14 @@ export function loadPaySME(win=window,doc=document){
  return sdkPromise;
 }
 
-function invoiceMessage(order){
+function invoiceMessage(order,code){
+ const reference=code?' for PaySME Code '+code:'';
  if(order.status==='paid'){
-  if(order.review_required)return 'Payment received for '+order.invoice_id+'. Contact support@paysme.site to resolve this payment.';
-  return 'Payment confirmed for '+order.invoice_id+'. Your package details are shown above.';
+  if(order.review_required)return 'Payment received'+reference+'. Contact support@paysme.site to resolve this payment.';
+  return 'Payment confirmed'+reference+'. Your package details are shown above.';
  }
- if(order.status==='cancelled'||order.status==='expired')return 'Payment request '+order.invoice_id+' '+order.status+'.';
- return 'Awaiting payment for '+order.invoice_id+'. Check your SMS for the PaySME payment link.';
+ if(order.status==='cancelled'||order.status==='expired')return 'Payment request'+reference+' '+order.status+'.';
+ return 'Awaiting payment'+reference+'. Check your SMS for the PaySME payment link.';
 }
 
 export function mountSubscription(container,onStatus=()=>{},onTown=()=>{}){
@@ -92,6 +98,7 @@ export function mountSubscription(container,onStatus=()=>{},onTown=()=>{}){
  const message=container.querySelector('#payment-message');
  const townButton=container.querySelector('#subscription-account-town');
  const buttons=[];
+ const codeKey=id=>'seekgrn-paysme-code:'+applicantId+':'+id;
  let invoice=pendingReturnInvoice(sessionStorage);
  let status=null,busy=false,refreshing=false,loadingButtons=false;
  const show=(node,value)=>{
@@ -131,7 +138,11 @@ export function mountSubscription(container,onStatus=()=>{},onTown=()=>{}){
     const results=await Promise.allSettled(references.map(id=>checkInvoice(id,bearer)));
     if(!active()||busy)return;
     const selected=results[0];
-    if(selected.status==='fulfilled')show(returnMessage,invoiceMessage(selected.value));
+    if(selected.status==='fulfilled'){
+     const order=selected.value;
+     const code=paySMECode(order.paysme_code)||paySMECode(sessionStorage.getItem(codeKey(order.invoice_id)));
+     show(returnMessage,invoiceMessage(order,code));
+    }
     else if(!next.pending_invoices.length)show(returnMessage,selected.reason.message);
     else show(returnMessage,'You have a pending PaySME payment request.');
     if(results.some(result=>result.status==='fulfilled'&&result.value.status!=='pending'&&next.pending_invoices.includes(result.value.invoice_id))){
@@ -169,7 +180,9 @@ export function mountSubscription(container,onStatus=()=>{},onTown=()=>{}){
     invoice=result.order.invoice_id;
     sessionStorage.setItem(returnInvoiceKey,invoice);
    }
-   await sdk.requestToPay({...result.checkout,show_notification:active()});
+   const request=await sdk.requestToPay({...result.checkout,show_notification:active()});
+   const code=paySMECode(request?.generated_code??request?.paycode??request?.transaction?.generated_code);
+   if(active()&&code)sessionStorage.setItem(codeKey(result.order.invoice_id),code);
    if(active())show(message,'');
   }catch(error){
    if(active())show(message,error.message||'Unable to send your payment request.');

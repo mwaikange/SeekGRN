@@ -10,12 +10,13 @@ import {removalPage,submitRemoval} from './removal.js';
 import {subscriptionPage,mountSubscription,subscriptionStatus,savePreparedPack} from './subscription.js';
 import {preparationAvailable} from './subscription-plans.js';
 import {capturePaymentReturn,returnInvoiceKey} from './payment-config.js';
-import {exportMobileFile,inMobileApp,mobileReady,mobileUnavailable,pickMobileUpload,playStoreApp} from './mobile-app.js';
+import {exportMobileFile,inMobileApp,mobileReady,mobileUnavailable,pickMobileCircular,playStoreApp} from './mobile-app.js';
 
-function uploadPicker(kind,label,classes,accept) {
+function circularPicker() {
+  const label=icon('upload')+' Choose circular PDF';
   return inMobileApp
-    ? '<button type="button" class="'+classes+'" data-mobile-upload="'+kind+'">'+label+'</button>'
-    : '<label class="'+classes+' file-picker">'+label+'<input type="file" data-upload="'+kind+'" accept="'+accept+'"></label>';
+    ? '<button type="button" class="button primary" data-mobile-upload="circular">'+label+'</button>'
+    : '<label class="button primary file-picker">'+label+'<input type="file" data-upload="circular" accept="application/pdf,.pdf"></label>';
 }
 
 async function initialize() {
@@ -150,16 +151,16 @@ function profileContent() {
     case 'health': return '<p class="subtle">Answer each question. For a Yes answer, describe the condition, severity, date and duration as applicable.</p>'+fieldGrid([['height','Height (cm)','number'],['mass','Body mass (kg)','number']])+fields.health.map(question).join('');
     case 'review': {
       const warnings=fields.problems(p);
-      return fields.disclosures.map(question).join('')+'<div class="signature-box"><h3>Signature (optional)</h3><p>Upload your own signature to place it on both declarations, or skip and sign the printed forms.</p>'+uploadPicker('signature','Upload signature','button secondary','image/png,image/jpeg')+(p.signature?'<img alt="Your signature" src="'+escape(p.signature)+'" style="max-width:220px;max-height:80px;display:block">'+action('Remove signature','remove-signature',null,'button quiet'):'')+'</div>'+ '<div class="confirm-box"><h3>Confirm your profile</h3><p>Review the details you entered. Sign the application and health declaration when you prepare each pair of forms.</p>'+
+      return fields.disclosures.map(question).join('')+'<div class="confirm-box"><h3>Confirm your profile</h3><p>Review the details you entered. Sign the printed application and health declaration before submitting them.</p>'+
         (warnings.length?'<ul>'+warnings.map(w=>'<li>'+escape(w)+'</li>').join('')+'</ul>':'')+
         action(p.confirmed?'Profile confirmed':'Confirm profile','confirm','check','button primary',p.confirmed?'disabled':'')+'</div>';
     }
-    default: return '<div class="import-box"><div>'+icon('upload',23)+'<div><strong>Import a completed form</strong><p>Extract text from a previously filled application or health PDF, then review each entry.</p></div></div>'+uploadPicker('profile','Choose PDF','button secondary','application/pdf,.pdf')+'</div>'+fieldGrid(fields.personal);
+    default: return fieldGrid(fields.personal);
   }
 }
 function profile() {
   if(!user||registrationPending())return signInPrompt();
-  return '<section class="wrap">'+sectionHeading('APPLICANT PROFILE','My profile','Save your details for future application forms.')+
+  return '<section class="wrap">'+sectionHeading('APPLICANT PROFILE','My profile','Enter and confirm your details once. We reuse them to fill in future application forms.')+
     '<div class="page-grid"><aside class="panel side-steps"><div class="profile-state">'+icon(confirmed()?'check':'user')+(confirmed()?'Confirmed profile':'Profile draft')+'</div>'+
     fields.sections.map(([id,label])=>action(label,'profile-section',null,state.section===id?'step active':'step','data-id="'+id+'"')).join('')+
     action('Clear profile and documents','clear','close','button quiet clear')+'</aside><div class="panel form-panel"><h2>'+fields.sections.find(([id])=>id===state.section)[1]+'</h2>'+profileContent()+
@@ -179,7 +180,7 @@ function documents() {
 function admin() {
   if(!isAdmin)return signInPrompt();
   return '<section class="wrap">'+sectionHeading('ADMINISTRATION','Upload PSM circular','Import and review the monthly circular before publishing it for all applicants.')+
-    '<div class="panel form-panel admin-panel">'+uploadPicker('circular',icon('upload')+' Choose circular PDF','button primary','application/pdf,.pdf')+
+    '<div class="panel form-panel admin-panel">'+circularPicker()+
     '<p class="subtle">Publishing replaces the current circular for everyone. Vacancies close at 00:00 Namibia time on the closing date and are removed two days later.</p>'+
     (state.circularDraft?'<form id="publish-form"><h2>Review imported circular</h2>'+grid(input('draft','title','Circular title',null,state.circularDraft.title)+input('draft','advertised','Advertised date','date',state.circularDraft.advertised)+input('draft','closes','Closing date','date',state.circularDraft.closes))+
       input('draft','jobsText','Vacancies (JSON)','textarea',state.circularDraft.jobsText)+'<p>'+state.circularDraft.jobs.length+' vacancies detected. Review titles, ministries, duty stations and instructions against the PDF.</p><button class="button primary">Publish circular</button></form>':'')+
@@ -358,32 +359,17 @@ root.addEventListener('input',event=>{
 });
 root.addEventListener('change',event=>{
   const el=event.target;
-  if(el.dataset.upload && el.files[0]) {
-    const file=el.files[0];
-    void upload(el.dataset.upload,file);
-  }
+  if(el.dataset.upload==='circular'&&el.files?.[0])void uploadCircular(el.files[0]);
   if (el.dataset.field && el.tagName==='SELECT' && (el.dataset.field==='employmentType'||[...fields.health,...fields.disclosures].some(([key])=>key===el.dataset.field))) render();
 });
-async function upload(kind,file) {
-  if(kind==='circular'&&!isAdmin){status('Super-admin access is required.');return;}
-  if(kind==='signature'){
-   try{
-    if(!['image/png','image/jpeg'].includes(file.type)||file.size>2*1024*1024)throw new Error('Choose a PNG or JPEG signature smaller than 2 MB.');
-    const reader=new FileReader();reader.onload=()=>{state.profile.signature=reader.result;state.profile.confirmed=false;render();};reader.readAsDataURL(file);
-   }catch(error){status(error.message);}return;
-  }
-  status('Reading PDF…');
+async function uploadCircular(file) {
+  if(!isAdmin){status('Super-admin access is required.');return;}
+  status('Reading PDF.');
   try {
-    const {importCircular,importProfile}=await import('./extract.js');
-    if(kind==='circular') {
-      state.circularDraft=await importCircular(file);
-      state.circularDraft.jobsText=JSON.stringify(state.circularDraft.jobs,null,2);
-      state.notice='Check the extracted vacancies against the circular.';
-    } else {
-      const imported=await importProfile(file);
-      state.profile={...state.profile,...imported,confirmed:false};
-      state.notice='Imported '+Object.keys(imported).length+' fields. Review and complete every section before confirming.';
-    }
+    const {importCircular}=await import('./extract.js');
+    state.circularDraft=await importCircular(file);
+    state.circularDraft.jobsText=JSON.stringify(state.circularDraft.jobs,null,2);
+    state.notice='Check the extracted vacancies against the circular.';
     render();
   } catch(error) { status(error.message); }
 }
@@ -407,13 +393,13 @@ root.addEventListener('submit',async event=>{
   finally {publishButton.disabled=false;}
 });
 root.addEventListener('click',async event=>{
-  const mobilePicker=event.target.closest('[data-mobile-upload]');
+  const mobilePicker=event.target.closest('[data-mobile-upload="circular"]');
   if(mobilePicker){
+    if(!isAdmin){status('Super-admin access is required.');return;}
     const applicantId=user?.id;
-    const kind=mobilePicker.dataset.mobileUpload;
     try {
-      const file=await pickMobileUpload(kind);
-      if(file&&user?.id===applicantId&&mobilePicker.isConnected)await upload(kind,file);
+      const file=await pickMobileCircular();
+      if(file&&user?.id===applicantId&&mobilePicker.isConnected)await uploadCircular(file);
     }catch(error){status(error.message);}
     return;
   }
@@ -430,7 +416,6 @@ root.addEventListener('click',async event=>{
     if(name==='account'){openAccount(reloadAccount,user&&registrationPending()?'contacts':'login',resumeAction);return;}
     if(name==='add-row'){state.profile[kind].push({});state.profile.confirmed=false;render();return;}
     if(name==='remove-row'){state.profile[kind].splice(Number(index),1);state.profile.confirmed=false;render();return;}
-    if(name==='remove-signature'){delete state.profile.signature;state.profile.confirmed=false;render();return;}
     if(name==='save'){
       await saveProfile();
       const current=fields.sections.findIndex(([key])=>key===state.section);
