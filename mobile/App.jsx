@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, AppState, BackHandler, Linking, StatusBar, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import * as SplashScreen from 'expo-splash-screen';
 import * as Updates from 'expo-updates';
 import { WebView } from 'react-native-webview';
 import { exportFile, pickFile } from './files';
 import LaunchScreen from './LaunchScreen';
 import { isOAuthLaunch, isWorkspace, readOAuthCallback, startsDocument } from './workspace';
+
+void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const production = __DEV__ ? process.env.EXPO_PUBLIC_SEEKGRN_PLAY === '1' : Updates.channel !== 'preview';
 const liveOrigin = 'https://seek.paysme.site';
@@ -17,6 +20,7 @@ const appAgent = `SeekGRNApp/1-${production ? 'Play' : 'Preview'}${oauthSupporte
 const source = { uri: `${origin}/?client=${mode}` };
 const bridge = 'seekgrn-mobile-v1';
 const loadTimeout = 35000;
+const minimumLoaderTime = 700;
 const launchProbe = `
   if (document.querySelector('meta[name="seekgrn-app-bridge"][content="1"]')) {
     window.seekGrnNativeReady?.();
@@ -51,6 +55,22 @@ export default function App() {
   const [attempt, setAttempt] = useState(0);
   const [screen, setScreen] = useState('loading');
   const [error, setError] = useState('');
+  const [artworkReady, setArtworkReady] = useState(false);
+  const [startupHoldComplete, setStartupHoldComplete] = useState(false);
+  const showLoader = !startupHoldComplete || screen !== 'ready';
+
+  useEffect(() => {
+    if (!artworkReady) return;
+    let timer;
+    const frame = requestAnimationFrame(() => {
+      SplashScreen.hide();
+      timer = setTimeout(() => setStartupHoldComplete(true), minimumLoaderTime);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
+  }, [artworkReady]);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -173,7 +193,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle={screen === 'ready' ? 'dark-content' : 'light-content'} />
+      <StatusBar barStyle={showLoader ? 'light-content' : 'dark-content'} />
       <SafeAreaView style={styles.content}>
         <View style={styles.content}>
           <WebView
@@ -181,8 +201,8 @@ export default function App() {
             ref={web}
             source={source}
             applicationNameForUserAgent={appAgent}
-            style={[styles.content, screen !== 'ready' && styles.hidden]}
-            importantForAccessibility={screen === 'ready' ? 'auto' : 'no-hide-descendants'}
+            style={[styles.content, showLoader && styles.hidden]}
+            importantForAccessibility={showLoader ? 'no-hide-descendants' : 'auto'}
             originWhitelist={['*']}
             domStorageEnabled
             allowFileAccess={false}
@@ -216,7 +236,7 @@ export default function App() {
           />
         </View>
       </SafeAreaView>
-      {screen !== 'ready' && <LaunchScreen error={error} onRetry={retry} />}
+      {showLoader && <LaunchScreen error={error} onRetry={retry} onArtworkReady={() => setArtworkReady(true)} />}
     </SafeAreaProvider>
   );
 }

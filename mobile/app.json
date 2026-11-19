@@ -27,7 +27,7 @@
     },
     "plugins": [
       ["expo-image-picker", { "cameraPermission": false, "microphonePermission": false, "photosPermission": false }],
-      ["expo-splash-screen", { "backgroundColor": "#173C32", "image": "./assets/splash.png", "imageWidth": 128 }]
+      ["expo-splash-screen", { "backgroundColor": "#10291F", "image": "./assets/splash.png", "imageWidth": 128 }]
     ],
     "runtimeVersion": { "policy": "fingerprint" },
     "updates": {

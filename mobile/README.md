@@ -85,10 +85,10 @@ Website changes go through Vercel. Wrapper JavaScript and bundled loader art can
 | --- | --- | --- |
 | App icon | `assets/icon.png` | 1024 × 1024 PNG |
 | Adaptive and themed icon foreground | `assets/foreground.png` | 1024 × 1024 transparent PNG |
-| Native splash logo | `assets/splash.png` | 512 × 512 transparent PNG |
-| In-app loader artwork | `assets/loader-dunes.jpg` | 960 × 480 JPEG |
+| Native splash placeholder | `assets/splash.png` | 128 x 128 transparent PNG |
+| In-app loader artwork | `assets/loader-dunes.jpg` | 992 x 1586 portrait JPEG |
 | Play Console listing icon | `assets/play-store-icon.png` | 512 × 512 PNG |
 
-Check the native splash and launcher icon in the installed APK. Expo Go displays its own launch UI.
+Check the transition from the native background to the full-screen dunes loader in the installed APK. Expo Go displays its own launch UI first.
 
 The wrapper domain change requires no PaySME SDK release. If PaySME’s central **Open SeekGRNJobs** button uses a manually registered destination, update the `SEEKGRN` entry using the [PaySME handoff](../PAYSME_APP_HANDOFF.md) after the new domain is live.
