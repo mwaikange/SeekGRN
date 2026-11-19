@@ -125,8 +125,8 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={[styles.safe, screen !== 'ready' && styles.launch]}>
-        <StatusBar barStyle={screen === 'ready' ? 'dark-content' : 'light-content'} />
+      <StatusBar barStyle={screen === 'ready' ? 'dark-content' : 'light-content'} />
+      <SafeAreaView style={styles.content}>
         <View style={styles.content}>
           <WebView
             key={attempt}
@@ -165,16 +165,14 @@ export default function App() {
             onHttpError={({ nativeEvent }) => { if (isWorkspace(origin, nativeEvent.url)) fail('http', nativeEvent.statusCode); }}
             onRenderProcessGone={() => fail('workspace-error')}
           />
-          {screen !== 'ready' && <LaunchScreen error={error} onRetry={retry} />}
         </View>
       </SafeAreaView>
+      {screen !== 'ready' && <LaunchScreen error={error} onRetry={retry} />}
     </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FAF9F4' },
   content: { flex: 1, backgroundColor: '#FAF9F4' },
-  launch: { backgroundColor: '#102F27' },
   hidden: { opacity: 0 },
 });
