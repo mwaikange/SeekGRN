@@ -285,6 +285,7 @@ html{scroll-padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
 .allowance-panel.is-active{background:#e9a800;border:2px solid var(--allowance-olive);color:var(--allowance-olive)}
 .allowance-pill{display:inline-flex;align-items:center;padding:5px 10px;border:1px solid var(--allowance-olive);border-radius:999px;background:var(--allowance-olive);color:#fff;font-size:13px;font-weight:700}
 .allowance-panel.is-active .button.quiet{color:var(--allowance-olive);border-color:var(--allowance-olive)}
+.allowance-panel #refresh-subscription[aria-busy="true"]{cursor:wait;opacity:1}
 .allowance-panel [hidden]{display:none}
 .subscription-explainer{color:var(--muted);line-height:1.65;max-width:850px;font-size:14px}
 .subscription-page a{overflow-wrap:anywhere}

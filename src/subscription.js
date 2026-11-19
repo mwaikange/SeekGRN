@@ -45,7 +45,9 @@ export function subscriptionPage(){
    <p id="subscription-status" role="status">Loading your allowance.</p>
    <p id="payment-return-status" role="status" hidden></p>
    <p id="payment-message" role="status" hidden></p>
-   <button class="button quiet" id="refresh-subscription" type="button">Refresh status</button>
+   <button class="button quiet" id="refresh-subscription" type="button">
+    <span class="auth-spinner" aria-hidden="true" hidden></span><span class="refresh-label">Refresh status</span>
+   </button>
    <button class="button secondary" id="subscription-account-town" type="button" hidden>Set your town in My account</button>
   </div>
   ${cards?`<div class="subscription-grid">${cards}</div>`:''}
@@ -129,6 +131,9 @@ export function mountSubscription(container,onStatus=()=>{},onTown=()=>{}){
  const statusPill=allowance.querySelector('.allowance-pill');
  const returnMessage=container.querySelector('#payment-return-status');
  const message=container.querySelector('#payment-message');
+ const refreshButton=container.querySelector('#refresh-subscription');
+ const refreshLabel=refreshButton.querySelector('.refresh-label');
+ const refreshSpinner=refreshButton.querySelector('.auth-spinner');
  const townButton=container.querySelector('#subscription-account-town');
  const buttons=[];
  const codeKey=id=>'seekgrn-paysme-code:'+applicantId+':'+id;
@@ -142,6 +147,13 @@ export function mountSubscription(container,onStatus=()=>{},onTown=()=>{}){
  function syncButtons(){
   for(const button of buttons)button.disabled=busy||isLocked()||!checkoutTown(user);
   townButton.hidden=playStoreApp||Boolean(checkoutTown(user));
+ }
+
+ function setRefreshFeedback(checking){
+  refreshButton.disabled=checking;
+  refreshButton.setAttribute('aria-busy',String(checking));
+  refreshLabel.textContent=checking?'Refreshing…':'Refresh status';
+  refreshSpinner.hidden=!checking;
  }
 
  async function token(){
@@ -199,7 +211,10 @@ export function mountSubscription(container,onStatus=()=>{},onTown=()=>{}){
    }
   }finally{
    refreshing=false;
-   if(active())syncButtons();
+   if(active()){
+    if(refreshButton.disabled)setRefreshFeedback(false);
+    syncButtons();
+   }
   }
  }
 
@@ -259,7 +274,9 @@ export function mountSubscription(container,onStatus=()=>{},onTown=()=>{}){
  const focusRefresh=()=>{if(document.visibilityState==='visible')void refresh();};
  window.addEventListener('focus',focusRefresh);
  document.addEventListener('visibilitychange',focusRefresh);
- container.querySelector('#refresh-subscription').onclick=()=>{
+ refreshButton.onclick=()=>{
+  if(!active()||busy)return;
+  setRefreshFeedback(true);
   show(message,'');
   void mountButtons();
   void refresh();
