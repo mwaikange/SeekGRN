@@ -3,6 +3,7 @@ import {planList,PLANS,regularSubscriber} from './subscription-plans.js';
 import {icon} from './icons.js';
 import {pendingReturnInvoice,returnInvoiceKey} from './payment-config.js';
 import {checkoutTown} from './paysme-towns.js';
+import {playStoreApp} from './mobile-app.js';
 
 const date=value=>new Date(value).toLocaleDateString('en-GB',{timeZone:'Africa/Windhoek'});
 const sdkAvailable=sdk=>typeof sdk?.renderRequestToPayButton==='function'&&typeof sdk?.requestToPay==='function';
@@ -22,7 +23,7 @@ export async function savePreparedPack(bundle){
 
 export function subscriptionPage(){
  if(!regularSubscriber(user,isAdmin))return '';
- const cards=planList.map(p=>`<article class="panel price-card">
+ const cards=playStoreApp?'':planList.map(p=>`<article class="panel price-card">
   <span class="eyebrow">${p.name}</span><h2>N$${p.monthly}<small> / month</small></h2>
   <p class="plan-total">${p.months===1?'N$50 billed monthly':'N$'+p.monthly+' × '+p.months+' months = <strong>N$'+p.total+'</strong>'}</p>
   <span class="saving-tag">${p.saving?'Save N$'+p.saving+' ('+Math.round(p.saving/(50*p.months)*100)+'%)':'Flexible monthly access'}</span>
@@ -30,7 +31,7 @@ export function subscriptionPage(){
   <div class="plan-request" data-plan="${p.id}"></div>
  </article>`).join('');
  return `<section class="wrap subscription-page">
-  <div class="page-head"><span class="eyebrow">YOUR APPLICATION WORKSPACE</span><h1>Subscription</h1><p>Choose a package and receive your payment link by SMS.</p></div>
+  <div class="page-head"><span class="eyebrow">YOUR APPLICATION WORKSPACE</span><h1>Subscription</h1><p>${playStoreApp?'Check your access and remaining preparations.':'Choose a package and receive your payment link by SMS.'}</p></div>
   <div class="panel allowance-panel">
    <div>${icon('subscription',24)}<h2>Your allowance</h2></div>
    <p id="subscription-status" role="status">Loading your allowance.</p>
@@ -39,9 +40,9 @@ export function subscriptionPage(){
    <button class="button quiet" id="refresh-subscription" type="button">Refresh status</button>
    <button class="button secondary" id="subscription-account-town" type="button" hidden>Set your town in My account</button>
   </div>
-  <div class="subscription-grid">${cards}</div>
+  ${cards?`<div class="subscription-grid">${cards}</div>`:''}
   <p class="subscription-explainer">Everyone gets one free preparation, with or without a subscription. One preparation includes the employment form and health questionnaire for one vacancy. Regenerating or downloading the same vacancy pack is free. Removing documents does not restore an allowance.</p>
-  <p class="subscription-explainer">Monthly allowances reset on your subscription anniversary. Unused preparations expire. Six-month and annual packages are paid upfront. You can choose a new package when your current subscription ends or your pending invoice is cancelled or expires. Payment is confirmed before access activates.</p>
+  <p class="subscription-explainer">Monthly allowances reset on your subscription anniversary. Unused preparations expire.${playStoreApp?'':' Six-month and annual packages are paid upfront. You can choose a new package when your current subscription ends or your pending invoice is cancelled or expires. Payment is confirmed before access activates.'}</p>
  </section>`;
 }
 
@@ -100,7 +101,7 @@ export function mountSubscription(container,onStatus=()=>{},onTown=()=>{}){
  const isLocked=()=>!status||status.plan!=='free'||status.upcoming_plan||status.pending_invoices.length>0;
  function syncButtons(){
   for(const button of buttons)button.disabled=busy||isLocked()||!checkoutTown(user);
-  townButton.hidden=Boolean(checkoutTown(user));
+  townButton.hidden=playStoreApp||Boolean(checkoutTown(user));
  }
 
  async function token(){
@@ -125,7 +126,7 @@ export function mountSubscription(container,onStatus=()=>{},onTown=()=>{}){
    if(!active()||busy)return;
    if(!Array.isArray(next.pending_invoices))throw Error(statusError);
    const references=[...new Set([...next.pending_invoices,...(invoice?[invoice]:[])])];
-   if(references.length){
+   if(!playStoreApp&&references.length){
     const bearer=await token();
     const results=await Promise.allSettled(references.map(id=>checkInvoice(id,bearer)));
     if(!active()||busy)return;
@@ -181,7 +182,7 @@ export function mountSubscription(container,onStatus=()=>{},onTown=()=>{}){
  }
 
  async function mountButtons(){
-  if(loadingButtons||buttons.length)return;
+  if(playStoreApp||loadingButtons||buttons.length)return;
   loadingButtons=true;
   try{
    const sdk=await loadPaySME();

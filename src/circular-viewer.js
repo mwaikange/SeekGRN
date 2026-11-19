@@ -2,8 +2,8 @@ import {getDocument,GlobalWorkerOptions} from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 GlobalWorkerOptions.workerSrc=workerUrl;
 
-export async function mountCircular(container,url,startPage=1){
- if(!url){container.textContent='No circular is available.';return ()=>{};}
+export async function mountCircular(container,url,startPage=1,label='circular'){
+ if(!url){container.textContent='No '+label+' is available.';return ()=>{};}
  const task=getDocument({url,isEvalSupported:false});
  let pdf,renderTask,disposed=false,pageNumber=startPage;
  const dispose=()=>{disposed=true;renderTask?.cancel();void task.destroy();};
@@ -11,8 +11,10 @@ export async function mountCircular(container,url,startPage=1){
   pdf=await task.promise;
   if(!container.isConnected){dispose();return dispose;}
   pageNumber=Math.max(1,Math.min(pdf.numPages,pageNumber));
-  container.innerHTML='<div class="pdf-controls"><button class="button secondary" data-prev>Previous</button><label>Page <input aria-label="Circular page" type="number" min="1" max="'+pdf.numPages+'" value="'+pageNumber+'"> of '+pdf.numPages+'</label><button class="button secondary" data-next>Next</button></div><p role="status" aria-live="polite"></p><canvas aria-label="Circular page"></canvas>';
+  container.innerHTML='<div class="pdf-controls"><button class="button secondary" data-prev>Previous</button><label>Page <input type="number" min="1" max="'+pdf.numPages+'" value="'+pageNumber+'"> of '+pdf.numPages+'</label><button class="button secondary" data-next>Next</button></div><p role="status" aria-live="polite"></p><canvas></canvas>';
   const canvas=container.querySelector('canvas'),input=container.querySelector('input'),status=container.querySelector('[role="status"]');
+  input.setAttribute('aria-label',label+' page number');
+  canvas.setAttribute('aria-label',label+' page');
   let drawing=false;
   async function draw(){
    if(drawing||disposed)return;drawing=true;
@@ -33,6 +35,6 @@ export async function mountCircular(container,url,startPage=1){
   container.querySelector('[data-next]').onclick=()=>{pageNumber++;void draw();};
   input.onchange=()=>{pageNumber=Math.max(1,Math.min(pdf.numPages,Number(input.value)||1));void draw();};
   void draw();
- }catch(error){if(container.isConnected)container.textContent='Unable to load the circular. '+error.message;dispose();}
+ }catch(error){if(container.isConnected)container.textContent='Unable to load the '+label+'. '+error.message;dispose();}
  return dispose;
 }

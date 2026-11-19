@@ -5,27 +5,27 @@
 | App name | SeekGRNJobs |
 | Permanent invoice prefix | SEEKGRN |
 | New invoice format | SEEKGRN-8A2DD90 (seven random uppercase hexadecimal characters) |
-| Icon | https://seek-grn.vercel.app/icon.svg |
-| App-opening URL | https://seek-grn.vercel.app/#subscription |
+| Icon | https://seek.paysme.site/icon.svg |
+| App-opening URL | https://seek.paysme.site/#subscription |
 | Central return URL | https://www.paysme.site/payment/return |
-| Shared merchant webhook | https://merchant-webhook.paysme.app/webhook/00000000-1986-0026-0000-000000000001 |
+| Shared merchant webhook | Use the endpoint already configured in PaySME. |
 | SEEKGRN signed-event destination | https://seek-grn.vercel.app/api/paysme-webhook |
 | Currency | NAD |
 
-Register this record in PaySME's central returnApps list (also served at https://seek-grn.vercel.app/paysme-app.json):
+After verifying the new domain, update the `SEEKGRN` record in PaySME’s central `returnApps` list if it stores its own copy. This record is also served from `https://seek.paysme.site/paysme-app.json`. The change is to the central return page’s destination and icon. It requires no SDK release.
 
 ```json
 {
   "name": "SeekGRNJobs",
   "invoicePrefix": "SEEKGRN",
-  "icon": "https://seek-grn.vercel.app/icon.svg",
-  "openUrl": "https://seek-grn.vercel.app/#subscription"
+  "icon": "https://seek.paysme.site/icon.svg",
+  "openUrl": "https://seek.paysme.site/#subscription"
 }
 ```
 
 The central page can use new URL(openUrl).searchParams.set('invoice_id', invoiceId), producing:
 
-    https://seek-grn.vercel.app/?invoice_id=SEEKGRN-8A2DD90#subscription
+    https://seek.paysme.site/?invoice_id=SEEKGRN-8A2DD90#subscription
 
 This is the web app-opening URL. It does not invent a native Expo scheme; a native deep link can replace it when the wrapper is built and its link handling is tested. Signed-out users sign in first, then the app fetches the owned invoice's status. No return flag or native message activates a subscription.
 

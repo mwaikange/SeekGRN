@@ -4,3 +4,6 @@ dist/
 *.local
 *.log
 install-cache/
+.env
+.env.*
+!.env.example

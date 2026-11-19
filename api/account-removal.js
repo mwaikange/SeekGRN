@@ -9,7 +9,7 @@ export function createRemovalHandler({env=process.env,sendMail=createSmtpSender(
   const reply=(code,error)=>res.status(code).json(error?{error}:{ok:true});
   if(req.method!=='POST'){res.setHeader('Allow','POST');return reply(405,'POST required.');}
   const origin=req.headers.origin;
-  const allowed=['https://seek-grn.vercel.app',env.VERCEL_URL&&`https://${env.VERCEL_URL}`,env.ACCOUNT_REMOVAL_ORIGIN].filter(Boolean);
+  const allowed=['https://seek.paysme.site','https://seek-grn.vercel.app',env.VERCEL_URL&&`https://${env.VERCEL_URL}`,env.ACCOUNT_REMOVAL_ORIGIN].filter(Boolean);
   if(origin&&!allowed.includes(origin))return reply(403,'Open the removal form on SeekGRNJobs to send your request.');
   if(!String(req.headers['content-type']||'').startsWith('application/json'))return reply(415,'JSON required.');
   let data=req.body;

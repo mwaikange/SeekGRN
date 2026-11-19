@@ -1,0 +1,9 @@
+.expo/
+android/
+ios/
+*.apk
+*.aab
+*.jks
+*.keystore
+.env
+.env.*

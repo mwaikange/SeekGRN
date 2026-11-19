@@ -294,3 +294,11 @@ html{scroll-padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
  5%,94%{transform:translateX(0);opacity:1}
 }
 @media(prefers-reduced-motion:reduce){#paysme-r2p-notice{animation:none}}
+.document-preview {
+  width: min(92vw, 48rem);
+  max-height: 88dvh;
+  overflow: auto;
+}
+.document-preview::backdrop { background: #12241fc2; }
+.document-preview h2 { margin: 0 0 .75rem; }
+.document-preview form { margin-bottom: .75rem; }

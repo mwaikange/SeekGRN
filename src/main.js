@@ -10,6 +10,13 @@ import {removalPage,submitRemoval} from './removal.js';
 import {subscriptionPage,mountSubscription,subscriptionStatus,savePreparedPack} from './subscription.js';
 import {preparationAvailable} from './subscription-plans.js';
 import {capturePaymentReturn,returnInvoiceKey} from './payment-config.js';
+import {exportMobileFile,inMobileApp,mobileReady,mobileUnavailable,pickMobileUpload,playStoreApp} from './mobile-app.js';
+
+function uploadPicker(kind,label,classes,accept) {
+  return inMobileApp
+    ? '<button type="button" class="'+classes+'" data-mobile-upload="'+kind+'">'+label+'</button>'
+    : '<label class="'+classes+' file-picker">'+label+'<input type="file" data-upload="'+kind+'" accept="'+accept+'"></label>';
+}
 
 async function initialize() {
 capturePaymentReturn(location,sessionStorage);
@@ -143,11 +150,11 @@ function profileContent() {
     case 'health': return '<p class="subtle">Answer each question. For a Yes answer, describe the condition, severity, date and duration as applicable.</p>'+fieldGrid([['height','Height (cm)','number'],['mass','Body mass (kg)','number']])+fields.health.map(question).join('');
     case 'review': {
       const warnings=fields.problems(p);
-      return fields.disclosures.map(question).join('')+'<div class="signature-box"><h3>Signature (optional)</h3><p>Upload your own signature to place it on both declarations, or skip and sign the printed forms.</p><label class="button secondary file-picker">Upload signature<input type="file" data-upload="signature" accept="image/png,image/jpeg"></label>'+(p.signature?'<img alt="Your signature" src="'+escape(p.signature)+'" style="max-width:220px;max-height:80px;display:block">'+action('Remove signature','remove-signature',null,'button quiet'):'')+'</div>'+ '<div class="confirm-box"><h3>Confirm your profile</h3><p>Review the details you entered. Sign the application and health declaration when you prepare each pair of forms.</p>'+
+      return fields.disclosures.map(question).join('')+'<div class="signature-box"><h3>Signature (optional)</h3><p>Upload your own signature to place it on both declarations, or skip and sign the printed forms.</p>'+uploadPicker('signature','Upload signature','button secondary','image/png,image/jpeg')+(p.signature?'<img alt="Your signature" src="'+escape(p.signature)+'" style="max-width:220px;max-height:80px;display:block">'+action('Remove signature','remove-signature',null,'button quiet'):'')+'</div>'+ '<div class="confirm-box"><h3>Confirm your profile</h3><p>Review the details you entered. Sign the application and health declaration when you prepare each pair of forms.</p>'+
         (warnings.length?'<ul>'+warnings.map(w=>'<li>'+escape(w)+'</li>').join('')+'</ul>':'')+
         action(p.confirmed?'Profile confirmed':'Confirm profile','confirm','check','button primary',p.confirmed?'disabled':'')+'</div>';
     }
-    default: return '<div class="import-box"><div>'+icon('upload',23)+'<div><strong>Import a completed form</strong><p>Extract text from a previously filled application or health PDF, then review each entry.</p></div></div><label class="button secondary file-picker">Choose PDF<input type="file" data-upload="profile" accept="application/pdf,.pdf"></label></div>'+fieldGrid(fields.personal);
+    default: return '<div class="import-box"><div>'+icon('upload',23)+'<div><strong>Import a completed form</strong><p>Extract text from a previously filled application or health PDF, then review each entry.</p></div></div>'+uploadPicker('profile','Choose PDF','button secondary','application/pdf,.pdf')+'</div>'+fieldGrid(fields.personal);
   }
 }
 function profile() {
@@ -172,7 +179,7 @@ function documents() {
 function admin() {
   if(!isAdmin)return signInPrompt();
   return '<section class="wrap">'+sectionHeading('ADMINISTRATION','Upload PSM circular','Import and review the monthly circular before publishing it for all applicants.')+
-    '<div class="panel form-panel admin-panel"><label class="button primary file-picker">'+icon('upload')+' Choose circular PDF<input type="file" data-upload="circular" accept="application/pdf,.pdf"></label>'+
+    '<div class="panel form-panel admin-panel">'+uploadPicker('circular',icon('upload')+' Choose circular PDF','button primary','application/pdf,.pdf')+
     '<p class="subtle">Publishing replaces the current circular for everyone. Vacancies close at 00:00 Namibia time on the closing date and are removed two days later.</p>'+
     (state.circularDraft?'<form id="publish-form"><h2>Review imported circular</h2>'+grid(input('draft','title','Circular title',null,state.circularDraft.title)+input('draft','advertised','Advertised date','date',state.circularDraft.advertised)+input('draft','closes','Closing date','date',state.circularDraft.closes))+
       input('draft','jobsText','Vacancies (JSON)','textarea',state.circularDraft.jobsText)+'<p>'+state.circularDraft.jobs.length+' vacancies detected. Review titles, ministries, duty stations and instructions against the PDF.</p><button class="button primary">Publish circular</button></form>':'')+
@@ -234,7 +241,12 @@ function go(target) {
   if(location.hash==='#'+target) navigate();
   else location.hash=target;
 }
-function download(blob, name) {
+async function download(blob, name) {
+  if(inMobileApp){
+    try {if(await exportMobileFile('save',blob,name))status('Saved '+name+'.');}
+    catch(error){status(error.message);}
+    return;
+  }
   const href=URL.createObjectURL(blob);
   const link=document.createElement('a');
   link.href=href; link.download=name; link.click();
@@ -261,7 +273,7 @@ async function prepare(jobId) {
     if(!state.admin&&!prepared(jobId)){
       state.subscription=await subscriptionStatus();
       if(user?.id!==applicantId)return;
-      if(!preparationAvailable(state.subscription)){state.notice='Your preparation allowance is used. Choose a subscription to prepare more forms.';go('subscription');return;}
+      if(!preparationAvailable(state.subscription)){state.notice=playStoreApp?'Your preparation allowance is used.':'Your preparation allowance is used. Choose a subscription to prepare more forms.';go('subscription');return;}
     }
     const {prepareForms}=await import('./pdf.js');
     state.jobStatus='Filling forms…'; renderJobs();
@@ -283,11 +295,41 @@ async function documentAction(name,bundle,index) {
   if (name==='download') return download(file.blob,file.name);
   if (name==='open-doc') {
     const href=URL.createObjectURL(file.blob);
+    if(inMobileApp){
+      file.viewed=true;
+      await put('documents',state.documents);
+      if(user?.id!==applicantId){URL.revokeObjectURL(href);return;}
+      render();
+      const dialog=document.createElement('dialog');
+      dialog.className='panel document-preview';
+      dialog.innerHTML='<h2>'+escape(file.label)+'</h2><form method="dialog"><button class="button secondary">Close</button></form><div class="pdf-reader"></div>';
+      document.body.append(dialog);dialog.showModal();
+      let dispose;
+      dialog.addEventListener('close',()=>{dispose?.();URL.revokeObjectURL(href);dialog.remove();},{once:true});
+      const viewer=dialog.querySelector('.pdf-reader');
+      try {
+        const {mountCircular}=await import('./circular-viewer.js');
+        if(viewer.isConnected){
+          dispose=await mountCircular(viewer,href,1,file.label);
+          if(!viewer.isConnected)dispose();
+        }
+      }catch(error){viewer.textContent=error.message;}
+      return;
+    }
     window.open(href,'_blank','noopener');
     setTimeout(()=>URL.revokeObjectURL(href),300000);
     file.viewed=true;
   }
   if (name==='share') {
+    if(inMobileApp){
+      try {if(!await exportMobileFile('share',file.blob,file.name))return;}
+      catch(error){status(error.message);return;}
+      if(user?.id===applicantId&&!file.shared&&window.confirm('Mark this document as shared?')){
+        file.shared=true;
+        await put('documents',state.documents);render();
+      }
+      return;
+    }
     const attachment=new File([file.blob],file.name,{type:'application/pdf'});
     if (navigator.canShare?.({files:[attachment]})) {
       try { await navigator.share({files:[attachment],title:file.label}); file.shared=true; }
@@ -365,6 +407,16 @@ root.addEventListener('submit',async event=>{
   finally {publishButton.disabled=false;}
 });
 root.addEventListener('click',async event=>{
+  const mobilePicker=event.target.closest('[data-mobile-upload]');
+  if(mobilePicker){
+    const applicantId=user?.id;
+    const kind=mobilePicker.dataset.mobileUpload;
+    try {
+      const file=await pickMobileUpload(kind);
+      if(file&&user?.id===applicantId&&mobilePicker.isConnected)await upload(kind,file);
+    }catch(error){status(error.message);}
+    return;
+  }
   const circularSource=event.target.closest('a[data-circular-page]');
   if(circularSource){event.preventDefault();state.circularPage=Number(circularSource.dataset.circularPage)||1;go('circular');return;}
   const btn=event.target.closest('button[data-action]');
@@ -420,6 +472,7 @@ navigate();
 if(recovering) openAccount(reloadAccount,'password');
 else if(registrationPending())openAccount(reloadAccount,'contacts',resumeAction);
 else if(user)void resumeAction();
+mobileReady();
 supabase.auth.onAuthStateChange(event=>{
   if(event==='SIGNED_OUT') setTimeout(async ()=>{
     try {
@@ -430,4 +483,7 @@ supabase.auth.onAuthStateChange(event=>{
 });
 
 }
-initialize().catch(error => { document.querySelector('#app').textContent = 'Unable to connect. Check your internet connection and reload. ' + error.message; });
+initialize().catch(error => {
+  document.querySelector('#app').textContent = 'Unable to connect. Check your internet connection and reload. ' + error.message;
+  mobileUnavailable();
+});

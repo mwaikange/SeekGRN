@@ -2,6 +2,7 @@ import {supabase,user,isAdmin,providers,refreshAccount} from './backend.js';
 import {icon} from './icons.js';
 import {namibianPhone,selectedTown,registerAccount,verifyContact,verifiedContacts,contactProgress,continueContactVerification} from './auth-service.js';
 import {checkoutTown,PAYSME_TOWNS} from './paysme-towns.js';
+import {inMobileApp} from './mobile-app.js';
 
 const safe = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pendingKey='seekgrn-registration';
@@ -71,7 +72,8 @@ export function openAccount(onChange,initial='login',onSuccess=()=>{}){
    content+='<button id="auth-submit" class="button primary" type="submit" data-label="'+label+'">'+label+icon('arrow')+'</button></form>';
    if(verify)content+='<div class="auth-utilities"><button type="button" class="text-button" id="resend">Resend code</button><button type="button" class="text-button" data-mode="'+(user?'contacts':'login')+'">Use different details</button></div>';
    if(login&&method==='email')content+='<div class="auth-utilities"><button type="button" class="text-button" data-mode="forgot">Forgot password?</button></div>';
-   if(login||signup)content+='<div class="auth-divider"><span>or continue with</span></div><div class="auth-social">'+['google','apple'].map(provider=>'<button type="button" class="button secondary" data-provider="'+provider+'" '+(!providers[provider]?'disabled title="'+provider[0].toUpperCase()+provider.slice(1)+' sign-in coming soon"':'')+'>'+icon(provider,20)+provider[0].toUpperCase()+provider.slice(1)+'</button>').join('')+'</div><p class="auth-switch">'+(signup?'Already have an account?':'New to SeekGRNJobs?')+' <button type="button" class="text-button" data-mode="'+(signup?'login':'signup')+'">'+(signup?'Sign in':'Create account')+'</button></p>';
+   if((login||signup)&&!inMobileApp)content+='<div class="auth-divider"><span>or continue with</span></div><div class="auth-social">'+['google','apple'].map(provider=>'<button type="button" class="button secondary" data-provider="'+provider+'" '+(!providers[provider]?'disabled title="'+provider[0].toUpperCase()+provider.slice(1)+' sign-in coming soon"':'')+'>'+icon(provider,20)+provider[0].toUpperCase()+provider.slice(1)+'</button>').join('')+'</div>';
+   if(login||signup)content+='<p class="auth-switch">'+(signup?'Already have an account?':'New to SeekGRNJobs?')+' <button type="button" class="text-button" data-mode="'+(signup?'login':'signup')+'">'+(signup?'Sign in':'Create account')+'</button></p>';
   }
   dialog.dataset.mode=mode;
   dialog.innerHTML='<button type="button" class="button quiet sheet-close" aria-label="Close">'+icon('close')+'</button><div class="sheet-handle" aria-hidden="true"></div><div class="sheet-inner"><div class="sheet-content"><h2 id="auth-title">'+titles[mode]+'</h2><p id="auth-message" role="status" aria-live="polite">'+safe(info)+'</p>'+content+'</div><p class="sheet-legal">By using the SeekGRNJobs app you agree to our <a href="#terms" data-legal>Terms of Service</a> &amp; <a href="#privacy" data-legal>Privacy Policy</a></p></div>';
