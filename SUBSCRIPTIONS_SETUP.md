@@ -12,11 +12,13 @@ The Subscription page, PaySME SMS checkout, verified payment webhook and databas
 
 Every account gets one lifetime free preparation, including subscribers. Paid quota is used first, then the free preparation if still available. One preparation is the employment form plus health questionnaire (and a disclosure supplement when needed) for one vacancy. Re-preparing or downloading that same vacancy never uses another allowance. Clearing/removing documents does not refund usage. Existing saved packs are grandfathered and do not consume the new free preparation. Admin membership is checked server-side through app_admins: unlimited free access, no Subscription icon, and no subscription purchase.
 
-Allowances reset on monthly anniversaries anchored to the paid term start, using calendar months. Unused quota does not roll over. A renewal or package change queues after the current paid term; no automatic recurring debit is set up. Each term requires a separate confirmed payment.
+Allowances reset on monthly anniversaries anchored to the paid term start, using calendar months. Unused quota does not roll over. An active term or pending invoice blocks new purchases across all packages. A new term requires a separate confirmed payment after the previous term ends.
 
 ## 1. Apply the database migration
 
 Paste all of scripts/subscriptions.sql into the EXISTING SeekGRNJobs project's SQL Editor. It creates subscription_orders, subscription_terms and form_preparations; RLS permits users to read only their own records. Public clients cannot change plans, payment state or counters. The migration backfills existing packs without charging them, then adds a guard against saving new packs outside the allowance RPC. Existing document viewing, sharing, removal and profile edits remain supported. Run the migration before testing new form preparation on the updated website.
+
+Apply scripts/subscription-lifecycle.sql last, before deploying the updated app. It retains previous invoices and terms, adds the pending-purchase lock, and lets verified cancelled or expired invoices release that lock. If the existing install already accepts short SEEKGRN references and checks NAD on webhooks, only the lifecycle migration is needed.
 
 The save_prepared_pack RPC charges the allowance and persists the encoded pack in one transaction. A failed save consumes nothing. Per-user transaction locks prevent concurrent requests overspending quota. RPC permissions and the existing app_admins membership—not editable profile metadata—determine access.
 
@@ -31,6 +33,7 @@ Set these values privately in the seek-grn Vercel project's Production environme
 | PAYSME_WEBHOOK_SECRET | Merchant webhook signing secret |
 | SUPABASE_URL | https://dmrtrkhjlarjzhaxyflf.supabase.co |
 | SUPABASE_SERVICE_ROLE_KEY | Server-only service-role key for the SeekGRNJobs project |
+| PAYSME_TRANSACTION_READ_KEY | Optional PaySME project credential with read access to transactions for this merchant. Set only on the server to enable authoritative expiry and cancellation polling when the router does not forward those states. |
 
 Never use the human-readable Vendor ID, SMSPortal credentials or a facilitator password in place of the PaySME Merchant ID/API key. Never prefix a signing secret or service-role key with VITE_. The SDK intentionally receives the public merchant integration pair; signing secrets and database service-role credentials stay server-side. Missing merchant configuration leaves payment creation unavailable rather than simulating a successful SMS/payment.
 
@@ -62,22 +65,22 @@ At verification time, merchant-webhook.paysme.app did not resolve from this envi
 
 If scripts/subscriptions.sql was already run, run scripts/payment-return-update.sql before testing payment callbacks on this release. It adds app/currency fields, changes new reference generation, and updates the payment RPC to verify currency. It preserves saved invoices and subscriptions. If subscriptions have not been installed, run the complete updated scripts/subscriptions.sql instead.
 
-New references such as SEEKGRN-8A2DD90 are reserved in the database before checkout. A seven-character collision retries against the unique invoice primary key. Retries for an existing pending obligation keep its original reference, including pre-existing SG references. A new paid term receives a new reference. Never rename an invoice already sent to PaySME.
+New references such as SEEKGRN-8A2DD90 are reserved in the database before checkout. A seven-character collision retries against the unique invoice primary key. Pending requests keep their original reference, including pre-existing SG references, until payment is confirmed or PaySME closes the invoice. Never rename an invoice already sent to PaySME.
 
 The central page appends invoice_id to the registered app-opening URL. SeekGRN saves that reference through sign-in and requests /api/subscription-status with the signed-in user's bearer token. The lookup filters both invoice and user; another account sees no payment details. Redirect status flags cannot mark an order paid. The app displays only the stored backend payment state and refreshes its actual subscription entitlement.
 
+For cancellation and expiry, forward HMAC-signed payment.cancelled or payment.expired events with the matching merchant_id, invoice_id, amount, currency and status, or configure the read credential above. A missing row or temporary status error keeps an invoice pending. When a payment is reported against an already closed invoice or while another term exists, the app records it for support review and grants no second term.
+
 ## 4. SDK and Expo wrapper
 
-The app loads https://www.paysme.site/sdk/v1/paysme.js once when checkout is requested. The package's Pay via PaySME button opens the town/details step, then the official SDK-rendered Create Payment Request button sends the payment link by SMS. Its official branding and exact Request to Pay Sent. Check your SMS. notice are retained. No facilitator modal is opened inside the app. Mobile and email come from the authenticated verified account; the SDK and backend use one stable invoice/idempotency key for retries.
+The app loads https://www.paysme.site/sdk/v1/paysme.js once on the Subscription page. Each official Create Payment Request button reserves the invoice and sends the PaySME SMS in the same click. The SDK notice slides in and out from the top right. The town comes from the 76 choices shown during signup and mobile verification, and mobile and email come from the authenticated account. Existing users can save a town in My account.
 
-When the SDK cannot load within ten seconds, Open secure checkout offers the guide's hosted checkout route. This fallback does not claim an SMS was sent. When the user returns from an SMS/system browser, focus/visibility refreshes the server subscription. No native JavaScript message or deep-link query can mark an account paid.
+When the SDK cannot load within ten seconds, Refresh status retries loading it. The app refreshes invoice state while a subscription or payment request is open, and on focus after a return from the payment browser.
 
 For the later Expo wrapper, enable JavaScript/HTTPS, permit the stable PaySME host and open SMS/payment links in the system browser or approved in-app browser. Preserve normal SDK HTTP revalidation and safe-area padding. There is no native Expo wrapper project in this repository yet. Store distribution must use the billing route applicable to the digital subscription and market; this web checkout does not establish app-store approval.
 
 ## 5. Validation
 
-Run npm test and npm run build. Payment tests use mocks and send no SMS or money. For the optional isolated PostgreSQL migration/allowance checks, install @electric-sql/pglite in a temporary directory and set SEEKGRN_PGLITE_MODULE to its absolute dist/index.js file URL before running node scripts/check-subscriptions.mjs. This runs against a fresh in-memory database, never the live project. The optional scripts/check-subscription-ui.mjs also needs playwright-core installed under install-cache/subscription-runtime, a local Vite server, and an available Edge/Chromium executable (SEEKGRN_BROWSER can override its path). Its Auth, SDK and payment calls are mocked.
+Run npm test and npm run build. Payment tests use mocks and send no SMS or money. For the optional isolated PostgreSQL migration/allowance checks, install @electric-sql/pglite in a temporary directory and set SEEKGRN_PGLITE_MODULE to its absolute dist/index.js file URL before running node scripts/check-subscriptions.mjs. This runs against a fresh in-memory database. The optional scripts/check-subscription-ui.mjs needs playwright-core installed under install-cache/subscription-runtime, a local Vite server, an available Edge/Chromium executable (SEEKGRN_BROWSER can override its path), and SEEKGRN_PAYSME_SDK set to a local copy of the SDK. It intercepts Auth and payment calls.
 
-After configuration, use a regular account: verify the free pack, quota limits, admin exemption, and SMS request flow. A payment request must remain pending until the signed merchant webhook arrives. Check retry/replay behaviour, wrong invoice/amount rejection, renewal dates, status refresh after returning from the payment browser, and narrow-phone layout. Live handset delivery and paid activation need your real merchant configuration; automated tests do not prove them.
-
-Verified in this update: 43 unit/integration tests, an isolated PostgreSQL run including migration rerun and quota/payment checks, and an in-app browser review with no horizontal overflow at 320, 360, 390, 768 and 1280 CSS pixels. The standalone headless Edge runner could not launch in this environment; its automated SDK click-through result is unverified. Real merchant checkout and paid activation remain untested until configuration.
+After configuration, use a regular account to verify handset SMS delivery, exact-invoice closure and signed paid activation.

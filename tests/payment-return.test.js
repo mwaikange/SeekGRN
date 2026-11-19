@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {isAppInvoice,capturePaymentReturn,pendingReturnInvoice,hostedPaymentUrl,PAYSME_RETURN_URL,PAYSME_SHARED_WEBHOOK_URL} from '../src/payment-config.js';
 import {createPaymentStatusHandler} from '../api/subscription-status.js';
+import {readClosedInvoice} from '../server/paysme-status.js';
 const invoice='SEEKGRN-8A2DD90';
 const store=()=>{const values=new Map();return {getItem:k=>values.get(k),setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};};
 const response=()=>({setHeader(){},status(code){this.code=code;return this;},json(body){this.body=body;return this;}});
@@ -34,4 +35,36 @@ test('unknown or another account invoice never discloses status; failures never 
   const db={auth:{getUser:async()=>({data:{user:{id:'owner'}}})},from:()=>({select:()=>({eq:()=>({eq:()=>({maybeSingle:async()=>result})})})})};
   const res=response();await createPaymentStatusHandler({client:()=>db})(req,res);assert.equal(res.code,result.error?503:404);assert.equal(res.body.order,undefined);assert.doesNotMatch(JSON.stringify(res.body),/private/);
  }
+});
+test('PaySME status is read for the exact merchant and invoice and only a single matching closed row can unlock',async()=>{
+ const env={PAYSME_TRANSACTION_READ_KEY:'test-read-key',PAYSME_MERCHANT_ID:'test-merchant'};
+ const order={invoice_id:invoice,amount:50};
+ for(const [rows,expected] of [
+  [[{status:'expired',amount:'50.00'}],'expired'],
+  [[{status:'canceled',amount:50}],'cancelled'],
+  [[{status:'paid',amount:50}],null],
+  [[{status:'expired',amount:240}],null],
+  [[{status:'expired',amount:50},{status:'pending',amount:50}],null],
+  [[],null]
+ ]){
+  assert.equal(await readClosedInvoice(env,order,async(url,options)=>{
+   assert.equal(url.searchParams.get('merchant_id'),'eq.test-merchant');
+   assert.equal(url.searchParams.get('invoice_id'),'eq.'+invoice);
+   assert.equal(options.headers.apikey,'test-read-key');
+   return Response.json(rows);
+  }),expected);
+ }
+});
+test('returned status persists an authoritative closure for an owned pending invoice',async()=>{
+ const data={invoice_id:invoice,app_prefix:'SEEKGRN',currency:'NAD',status:'pending',amount:50};
+ const query={select(){return this;},eq(){return this;},async maybeSingle(){return {data};}};
+ const db={auth:{getUser:async()=>({data:{user:{id:'owner'}}})},from:()=>query};
+ const handler=createPaymentStatusHandler({client:()=>db,lookup:async()=> 'expired',privileged:()=>({rpc:async(name,args)=>{
+  assert.equal(name,'close_subscription_order');
+  assert.deepEqual(args,{p_invoice:invoice,p_status:'expired',p_amount:50,p_currency:'NAD'});
+  return {data:{status:'expired'}};
+ }})});
+ const res=response();
+ await handler({method:'GET',query:{invoice_id:invoice},headers:{authorization:'Bearer owner-token'}},res);
+ assert.equal(res.body.order.status,'expired');
 });

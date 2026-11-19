@@ -1,6 +1,9 @@
 import {database} from '../server/subscriptions.js';
 import {isAppInvoice} from '../src/payment-config.js';
-export function createPaymentStatusHandler({env=process.env,client=token=>database(env,token)}={}){
+import {readClosedInvoice} from '../server/paysme-status.js';
+export function createPaymentStatusHandler({
+ env=process.env,client=token=>database(env,token),privileged=()=>database(env,null,true),lookup=order=>readClosedInvoice(env,order)
+}={}){
  return async(req,res)=>{
   res.setHeader('Cache-Control','no-store');
   const fail=(status,error)=>res.status(status).json({error});
@@ -12,10 +15,20 @@ export function createPaymentStatusHandler({env=process.env,client=token=>databa
   try{
    const db=client(token);const auth=await db.auth.getUser(token);
    if(auth.error||!auth.data?.user)return fail(401,'Sign in again to check this payment.');
-   const {data,error}=await db.from('subscription_orders').select('invoice_id,app_prefix,app_name,plan,amount,currency,status,paid_at').eq('invoice_id',invoice).eq('user_id',auth.data.user.id).maybeSingle();
+   const {data,error}=await db.from('subscription_orders').select('invoice_id,app_prefix,app_name,plan,amount,currency,status,paid_at,review_required').eq('invoice_id',invoice).eq('user_id',auth.data.user.id).maybeSingle();
    if(error)return fail(503,'Unable to check your payment. Please try again.');
    if(!data||data.app_prefix!=='SEEKGRN'||data.currency!=='NAD')return fail(404,'This payment was not found in your account.');
-   return res.status(200).json({order:data});
+   let order=data;
+   if(order.status==='pending'){
+    // Transient PaySME errors leave the last confirmed state in force.
+    const closed=await lookup(order).catch(()=>null);
+    if(closed){
+     const change=await privileged().rpc('close_subscription_order',{p_invoice:invoice,p_status:closed,p_amount:order.amount,p_currency:order.currency});
+     if(change.error)return fail(503,'Unable to refresh your payment. Please try again.');
+     order={...order,...change.data};
+    }
+   }
+   return res.status(200).json({order});
   }catch{return fail(503,'Unable to check your payment. Please try again.');}
  };
 }

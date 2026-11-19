@@ -1,6 +1,7 @@
 import {createHmac,timingSafeEqual} from 'node:crypto';
 import {database} from '../server/subscriptions.js';
 import {isAppInvoice} from '../src/payment-config.js';
+import {closedInvoiceStatus} from '../server/paysme-status.js';
 export const config={api:{bodyParser:false}};
 async function rawBody(req){
  const chunks=[];let size=0;
@@ -19,14 +20,22 @@ export function createWebhookHandler({env=process.env,client=()=>database(env,nu
   const expected=createHmac('sha256',env.PAYSME_WEBHOOK_SECRET).update(raw).digest();
   if(!timingSafeEqual(expected,Buffer.from(signature.slice(7),'hex')))return fail(401,'Invalid signature.');
   let event;try{event=JSON.parse(raw.toString('utf8'));}catch{return fail(400,'Invalid notification.');}
-  if(event?.event!=='payment.paid')return res.status(200).json({ignored:true});
-  // Accept exactly the documented signed completion, never a browser callback.
+  const eventName=event?.event;
+  const paid=eventName==='payment.paid';
+  const closed=['payment.cancelled','payment.canceled','payment.expired'].includes(eventName)
+   && closedInvoiceStatus(eventName.slice('payment.'.length));
+  if(!paid&&!closed)return res.status(200).json({ignored:true});
   const amount=Number(event.amount);
-  if(event.status!=='paid'||event.currency!=='NAD'||event.merchant_id!==env.PAYSME_MERCHANT_ID||!isAppInvoice(event.invoice_id)||typeof event.transaction_id!=='string'||!event.transaction_id||event.transaction_id.length>150||!Number.isFinite(amount)||amount<=0)return fail(400,'Payment details do not match.');
+  const matchingStatus=paid?event.status==='paid':closedInvoiceStatus(event.status)===closed;
+  if(!matchingStatus||event.currency!=='NAD'||event.merchant_id!==env.PAYSME_MERCHANT_ID||!isAppInvoice(event.invoice_id)||!Number.isFinite(amount)||amount<=0)return fail(400,'Payment details do not match.');
+  if(paid&&(typeof event.transaction_id!=='string'||!event.transaction_id||event.transaction_id.length>150))return fail(400,'Payment details do not match.');
   try{
-   const {data,error}=await client().rpc('apply_subscription_payment',{p_invoice:event.invoice_id,p_transaction:event.transaction_id,p_amount:amount,p_currency:event.currency});
+   const values={p_invoice:event.invoice_id,p_amount:amount,p_currency:event.currency};
+   const {data,error}=paid
+    ?await client().rpc('apply_subscription_payment',{...values,p_transaction:event.transaction_id})
+    :await client().rpc('close_subscription_order',{...values,p_status:closed});
    if(error)return fail(error.code==='P0001'?400:503,'Unable to apply this payment.');
-   return res.status(200).json({ok:true,replayed:Boolean(data?.replayed)});
+   return res.status(200).json({ok:true,replayed:Boolean(data?.replayed),...(data?.review_required?{review_required:true}:{})});
   }catch{return fail(503,'Unable to apply this payment.');}
  };
 }

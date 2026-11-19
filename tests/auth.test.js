@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {namibianPhone,verifiedContacts,registerAccount,sendPhoneCode,verifyContact,contactProgress,continueContactVerification} from '../src/auth-service.js';
+import {checkoutTown,PAYSME_TOWNS} from '../src/paysme-towns.js';
 import {smsPortalHandler as createSmsPortalHandler} from '../supabase/functions/smsportal-otp/handler.js';
 const smsPortalHandler=options=>createSmsPortalHandler({logger:()=>{},...options});
 
@@ -11,28 +12,37 @@ test('normalises Namibian contacts without duplicating the fixed country prefix'
 test('registration creates one email identity and retains the phone for verification',async()=>{
  let call;
  const auth={signUp:async args=>{call=args;return {data:{user:{id:'one',identities:[{}]},session:null}};}};
- const result=await registerAccount(auth,{email:' Example@Example.com ',phone:'0818083704',password:'example-password',redirectTo:'https://example.com/'});
+ const result=await registerAccount(auth,{email:' Example@Example.com ',phone:'0818083704',town:'Windhoek',password:'example-password',redirectTo:'https://example.com/'});
  assert.equal(call.email,'example@example.com');assert.equal(call.phone,undefined);
- assert.equal(call.options.data.contact_phone,'+264818083704');assert.equal(result.phone,'+264818083704');
+ assert.deepEqual(call.options.data,{contact_phone:'+264818083704',checkout_town:'Windhoek'});assert.equal(result.phone,'+264818083704');
+ assert.equal(result.town,'Windhoek');
+});
+test('the PaySME selector matches 76 unique choices and rejects a free-text town',async()=>{
+ assert.equal(new Set(PAYSME_TOWNS).size,76);
+ for(const town of ['Grünau','Koës','Lüderitz','Maltahöhe'])assert.ok(PAYSME_TOWNS.includes(town));
+ assert.equal(checkoutTown({user_metadata:{checkout_town:'Lüderitz'}}),'Lüderitz');
+ assert.equal(checkoutTown({user_metadata:{checkout_town:'Elsewhere'}}),'');
+ await assert.rejects(sendPhoneCode({updateUser:()=>assert.fail()},'818083704','Elsewhere'),/Choose your town/);
 });
 test('failed or duplicate signup cannot proceed to phone verification',async()=>{
- const details={email:'example@example.com',phone:'818083704',password:'example-password'};
+ const details={email:'example@example.com',phone:'818083704',town:'Windhoek',password:'example-password'};
  await assert.rejects(registerAccount({signUp:async()=>({error:new Error('Rate limit')})},details),/Rate limit/);
  await assert.rejects(registerAccount({signUp:async()=>({data:{user:{identities:[]}}})},details),/Sign in/);
 });
 test('phone verification calls Auth even when the cached provider flag is false or missing',async()=>{
  const calls=[];const auth={updateUser:async value=>{calls.push(value);return {};}};
- assert.equal(await sendPhoneCode(auth,'818083704',false),'+264818083704');
- assert.equal(await sendPhoneCode(auth,'0818083704'),'+264818083704');assert.deepEqual(calls,[{phone:'+264818083704'},{phone:'+264818083704'}]);
- await assert.rejects(sendPhoneCode({updateUser:async()=>({error:new Error('Phone sign-in disabled by server')})},'818083704'),/disabled by server/);
+ assert.equal(await sendPhoneCode(auth,'818083704','Windhoek'),'+264818083704');
+ assert.equal(await sendPhoneCode(auth,'0818083704','Okahandja'),'+264818083704');
+ assert.deepEqual(calls,[{phone:'+264818083704',data:{checkout_town:'Windhoek'}},{phone:'+264818083704',data:{checkout_town:'Okahandja'}}]);
+ await assert.rejects(sendPhoneCode({updateUser:async()=>({error:new Error('Phone sign-in disabled by server')})},'818083704','Windhoek'),/disabled by server/);
 });
 
 test('provider-confirmed email skips email OTP and sends only the mobile challenge',async()=>{
  const account={id:'one',email:'example@example.com',email_confirmed_at:'today',app_metadata:{provider:'google'}};
  const calls=[];const auth={updateUser:async value=>{calls.push(value);return {};},signInWithOtp:()=>assert.fail('verified email must not receive another OTP')};
- const result=await continueContactVerification(auth,account,{email:account.email,phone:'0818083704'});
+ const result=await continueContactVerification(auth,account,{email:account.email,phone:'0818083704',town:'Windhoek'});
  assert.deepEqual(contactProgress(account),{email:true,mobile:false,next:'mobile'});
- assert.deepEqual(result.challenge,{phone:'+264818083704',type:'phone_change'});assert.deepEqual(calls,[{phone:'+264818083704'}]);
+ assert.deepEqual(result.challenge,{phone:'+264818083704',type:'phone_change'});assert.deepEqual(calls,[{phone:'+264818083704',data:{checkout_town:'Windhoek'}}]);
 });
 
 test('email confirmation progresses to SMS and an SMS failure never restarts email verification',async()=>{
@@ -40,8 +50,8 @@ test('email confirmation progresses to SMS and an SMS failure never restarts ema
  const auth={signInWithOtp:async()=>{emails++;return {};},updateUser:async()=>{sms++;return {error:new Error('SMS hook unavailable')};}};
  assert.equal((await continueContactVerification(auth,account,{email:account.email,phone:'818083704'})).challenge.type,'email');
  account.email_confirmed_at='today';
- await assert.rejects(continueContactVerification(auth,account,{email:account.email,phone:'818083704'}),/SMS hook unavailable/);
- await assert.rejects(continueContactVerification(auth,account,{email:account.email,phone:'818083704'}),/SMS hook unavailable/);
+ await assert.rejects(continueContactVerification(auth,account,{email:account.email,phone:'818083704',town:'Windhoek'}),/SMS hook unavailable/);
+ await assert.rejects(continueContactVerification(auth,account,{email:account.email,phone:'818083704',town:'Windhoek'}),/SMS hook unavailable/);
  assert.equal(emails,1);assert.equal(sms,2);
 });
 

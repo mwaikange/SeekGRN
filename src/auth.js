@@ -1,6 +1,7 @@
 import {supabase,user,isAdmin,providers,refreshAccount} from './backend.js';
 import {icon} from './icons.js';
-import {namibianPhone,registerAccount,verifyContact,verifiedContacts,contactProgress,continueContactVerification} from './auth-service.js';
+import {namibianPhone,selectedTown,registerAccount,verifyContact,verifiedContacts,contactProgress,continueContactVerification} from './auth-service.js';
+import {checkoutTown,PAYSME_TOWNS} from './paysme-towns.js';
 
 const safe = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pendingKey='seekgrn-registration';
@@ -9,14 +10,17 @@ export function registrationPending(){return Boolean(user&&!isAdmin&&!verifiedCo
 
 export function openAccount(onChange,initial='login',onSuccess=()=>{}){
  if(document.querySelector('.auth-sheet'))return;
- const pending=pendingRegistration();
- let mode=initial==='password'?'password':user?(initial==='contacts'&&!verifiedContacts(user)?'contacts':'account'):initial;
+ const remembered=pendingRegistration();
+ const pending=user&&remembered.userId!==user.id&&remembered.email!==user.email?{}:remembered;
+ let mode=initial==='password'?'password':user?(initial==='town'&&!isAdmin&&verifiedContacts(user)?'town':initial==='contacts'&&!verifiedContacts(user)?'contacts':'account'):initial;
  let method='email',email=user?.email||pending.email||'',phone=user?.phone||pending.phone||user?.user_metadata?.contact_phone||'';
+ let town=checkoutTown(user)||pending.town||'';
  let challenge,afterVerify,expectedUserId=user?.id||pending.userId,busy=false,busyLabel='',resendAt=0;
  const dialog=document.createElement('dialog');dialog.className='auth-sheet';dialog.setAttribute('aria-labelledby','auth-title');
  document.body.append(dialog);document.body.classList.add('sheet-open');
  const message=text=>{const node=dialog.querySelector('#auth-message');if(node)node.textContent=text;};
- const remember=()=>sessionStorage.setItem(pendingKey,JSON.stringify({email,phone,userId:user?.id||expectedUserId}));
+ const remember=()=>sessionStorage.setItem(pendingKey,JSON.stringify({email,phone,town,userId:user?.id||expectedUserId}));
+ const townField=()=>'<label class="field"><span>Town</span><select name="town" autocomplete="address-level2" required><option value="" disabled'+(!PAYSME_TOWNS.includes(town)?' selected':'')+'>Select your town</option>'+PAYSME_TOWNS.map(option=>'<option'+(town===option?' selected':'')+'>'+safe(option)+'</option>').join('')+'</select></label>';
  const phoneField=()=>'<label class="field"><span>Mobile number</span><span class="phone-input"><span class="phone-prefix">+264</span><input name="phone" aria-label="Mobile number" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="81 234 5678" value="'+safe(phone.replace(/^\+?264/,''))+'" required></span></label>';
  const emailField=(readonly=false)=>'<label class="field"><span>Email address</span><input name="email" type="email" autocomplete="email" value="'+safe(email)+'" '+(readonly?'readonly':'')+' required></label>';
  const passwordField=()=>'<label class="field"><span>Password</span><input name="password" type="password" autocomplete="'+(mode==='login'?'current-password':'new-password')+'" minlength="8" required></label>';
@@ -40,12 +44,13 @@ export function openAccount(onChange,initial='login',onSuccess=()=>{}){
  function draw(info=''){
   const signup=mode==='signup',login=mode==='login',verify=mode==='verify',contacts=mode==='contacts';
   const state=contactProgress(user,phone);
-  const titles={login:'Welcome back.',signup:'Create your account.',forgot:'Reset your password.',verify:challenge?.phone?'Check your SMS.':'Check your email.',password:'Choose a new password.',contacts:state.email?'Verify your mobile.':'Verify your email.',account:'Your account.',complete:'Account verified.'};
+  const titles={login:'Welcome back.',signup:'Create your account.',forgot:'Reset your password.',verify:challenge?.phone?'Check your SMS.':'Check your email.',password:'Choose a new password.',contacts:state.email?'Verify your mobile.':'Verify your email.',account:'Your account.',complete:'Account verified.',town:'Your town.'};
   let content='';
   if(contacts||mode==='complete'||mode==='account'||(verify&&afterVerify==='contacts'))content+=progress();
   if(mode==='account'){
-   content+='<div class="account-details"><p>'+safe(user?.email||'Email not added')+'</p><p>'+safe(user?.phone||'Mobile not added')+'</p></div>';
+   content+='<div class="account-details"><p>'+safe(user?.email||'Email not added')+'</p><p>'+safe(user?.phone||'Mobile not added')+'</p>'+(checkoutTown(user)?'<p>'+safe(checkoutTown(user))+'</p>':'')+'</div>';
    if(!verifiedContacts(user))content+='<button class="button primary" data-mode="contacts">Complete contact verification '+icon('arrow')+'</button>';
+   else if(!isAdmin)content+='<button class="button secondary" data-mode="town">'+(checkoutTown(user)?'Change town':'Set your town')+'</button> ';
    if(!isAdmin)content+='<a class="button secondary account-subscription" href="#subscription">'+icon('subscription')+'Subscription</a>';
    content+='<button class="button secondary" id="signout">Sign out</button>';
   }else{
@@ -53,15 +58,16 @@ export function openAccount(onChange,initial='login',onSuccess=()=>{}){
    content+='<form id="auth-form">';
    if(verify)content+='<p>Enter the '+(challenge.phone?'SMS':'email')+' code sent to <strong>'+safe(challenge.phone||challenge.email)+'</strong>.</p><label class="field"><span>Verification code</span><input name="token" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" required autofocus></label>';
    else if(mode==='password')content+=passwordField();
+   else if(mode==='town')content+=townField();
    else if(mode==='complete')content+='<p>Your email and mobile number are verified. Your account is ready.</p>';
    else if(contacts){
     content+='<p>'+(state.email?'Your email is already verified. Send an SMS code to confirm your mobile number.':'Confirm your email first. We will then send the verification code to your mobile.')+'</p>';
     content+=state.email?'<p class="verified-contact">'+icon('check',16)+' '+safe(user.email)+'</p>':emailField(Boolean(user?.email));
-    content+=phoneField();
+    content+=phoneField()+townField();
    }else if(mode==='forgot')content+='<p>Enter your account email to receive a password-reset code.</p>'+emailField();
-   else if(signup)content+=emailField()+'<div class="auth-pair">'+phoneField()+passwordField()+'</div><p class="auth-hint">With email signup: email code, then SMS.</p>';
+   else if(signup)content+=emailField()+'<div class="auth-pair">'+phoneField()+townField()+'</div>'+passwordField()+'<p class="auth-hint">With email signup: email code, then SMS.</p>';
    else content+=(method==='mobile'?phoneField():emailField()+passwordField());
-   const label=signup?'Create account':verify?'Verify code':mode==='forgot'?'Send reset code':contacts?(state.email?'Send SMS code':'Send email code'):mode==='password'?'Save password':mode==='complete'?'Continue':method==='mobile'?'Send SMS code':'Sign in';
+   const label=signup?'Create account':verify?'Verify code':mode==='forgot'?'Send reset code':contacts?(state.email?'Send SMS code':'Send email code'):mode==='password'?'Save password':mode==='town'?'Save town':mode==='complete'?'Continue':method==='mobile'?'Send SMS code':'Sign in';
    content+='<button id="auth-submit" class="button primary" type="submit" data-label="'+label+'">'+label+icon('arrow')+'</button></form>';
    if(verify)content+='<div class="auth-utilities"><button type="button" class="text-button" id="resend">Resend code</button><button type="button" class="text-button" data-mode="'+(user?'contacts':'login')+'">Use different details</button></div>';
    if(login&&method==='email')content+='<div class="auth-utilities"><button type="button" class="text-button" data-mode="forgot">Forgot password?</button></div>';
@@ -87,13 +93,13 @@ export function openAccount(onChange,initial='login',onSuccess=()=>{}){
   dialog.querySelector('[name=token]')?.addEventListener('input',event=>{event.target.value=event.target.value.replace(/\D/g,'');});
   dialog.querySelector('#auth-form')?.addEventListener('submit',event=>{
    event.preventDefault();const data=new FormData(event.currentTarget);
-   void run(()=>submit(data),mode==='verify'?'Verifying…':mode==='forgot'?'Sending reset code…':mode==='password'?'Saving password…':mode==='signup'?'Creating account…':mode==='contacts'?(state.email?'Sending SMS…':'Sending email…'):mode==='complete'?'Opening your workspace…':method==='mobile'?'Sending SMS…':'Signing in…');
+   void run(()=>submit(data),mode==='verify'?'Verifying…':mode==='forgot'?'Sending reset code…':mode==='password'?'Saving password…':mode==='town'?'Saving town…':mode==='signup'?'Creating account…':mode==='contacts'?(state.email?'Sending SMS…':'Sending email…'):mode==='complete'?'Opening your workspace…':method==='mobile'?'Sending SMS…':'Signing in…');
   });
   syncBusy();
  }
  function capture(){
   const form=dialog.querySelector('form');if(!form)return;
-  const values=new FormData(form);if(values.has('email'))email=String(values.get('email')).trim().toLowerCase();if(values.has('phone'))phone=String(values.get('phone'));
+  const values=new FormData(form);if(values.has('email'))email=String(values.get('email')).trim().toLowerCase();if(values.has('phone'))phone=String(values.get('phone'));if(values.has('town'))town=String(values.get('town'));
  }
  async function run(work,label){
   if(busy)return;busy=true;busyLabel=label;syncBusy();message(label);
@@ -105,18 +111,28 @@ export function openAccount(onChange,initial='login',onSuccess=()=>{}){
   challenge=next;afterVerify=after;resendAt=Date.now()+60000;mode='verify';
   draw('Code sent. Enter it below.');
  }
+ async function saveTown(){
+  const {error}=await supabase.auth.updateUser({data:{checkout_town:selectedTown(town)}});
+  if(error)throw error;
+  await refreshAccount();
+ }
  async function nextContact(){
   if(!user?.id)throw new Error('Sign in again to continue verification.');
   email=user.email||email;
   phone=phone||user.phone||user.user_metadata?.contact_phone||'';
+  town=town||checkoutTown(user);
   expectedUserId=user.id;remember();
-  if(contactProgress(user,phone).next==='complete'){mode='complete';sessionStorage.removeItem(pendingKey);draw();await onChange();return;}
+  const next=contactProgress(user,phone);
+  if(next.next==='complete'){
+   if(town&&town!==checkoutTown(user))await saveTown();
+   mode='complete';sessionStorage.removeItem(pendingKey);draw();await onChange();return;
+  }
   mode='contacts';draw();
   // Collect a missing number before attempting delivery. Never resend email
   // when Auth already records it as confirmed.
-  if(!phone)return;
-  setBusyLabel(contactProgress(user,phone).email?'Sending SMS…':'Sending email…');
-  const result=await continueContactVerification(supabase.auth,user,{email,phone,redirectTo:location.origin+'/'});
+  if(!phone||(next.email&&!town))return;
+  setBusyLabel(next.email?'Sending SMS…':'Sending email…');
+  const result=await continueContactVerification(supabase.auth,user,{email,phone,town,redirectTo:location.origin+'/'});
   if(result.complete){mode='complete';draw();return;}
   if(result.challenge.phone)phone=result.challenge.phone;
   askCode(result.challenge,'contacts');
@@ -130,7 +146,7 @@ export function openAccount(onChange,initial='login',onSuccess=()=>{}){
  async function submit(data){
   capture();const redirectTo=location.origin+'/';
   if(mode==='signup'){
-   const result=await registerAccount(supabase.auth,{email,phone,password:String(data.get('password')),redirectTo});
+   const result=await registerAccount(supabase.auth,{email,phone,town,password:String(data.get('password')),redirectTo});
    email=result.email;phone=result.phone;expectedUserId=result.user?.id;remember();
    if(result.session){await refreshAccount();await nextContact();}
    else askCode({email,type:'email'},'contacts');
@@ -151,7 +167,8 @@ export function openAccount(onChange,initial='login',onSuccess=()=>{}){
    }
    await signedIn();return;
   }
-  if(mode==='contacts'){phone=namibianPhone(phone);await nextContact();return;}
+  if(mode==='contacts'){phone=namibianPhone(phone);town=selectedTown(town);await nextContact();return;}
+  if(mode==='town'){await saveTown();dialog.close();await onChange();await onSuccess();return;}
   if(mode==='forgot'){
    const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo});if(error)throw error;
    expectedUserId=undefined;askCode({email,type:'recovery'},'password');return;

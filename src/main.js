@@ -70,7 +70,7 @@ function shell(content) {
     (user&&!registrationPending()?'<nav class="app-nav" aria-label="Main navigation">'+nav.map(navLink).join('')+(state.admin?navLink(['admin','shield','Admin']):navLink(['subscription','subscription','Subscription']))+'</nav>':'')+
     action(user?'My account':'Sign in','account','user','button quiet mast-action')+'</div></header>'+
     '<main id="main">'+content+'<p id="notice" role="status" class="notice wrap" '+(state.notice?'':'hidden')+'>'+escape(state.notice)+'</p></main>'+
-    '<footer class="wrap footer"><div><a class="footer-brand" href="#browse">SeekGRNJobs</a><p>Independent application preparation tool for Namibia’s Public Service.</p><nav class="footer-legal" aria-label="Legal"><a href="#terms">Terms of Service</a><span aria-hidden="true">|</span><a href="#privacy">Privacy Policy</a><span aria-hidden="true">|</span><a href="/request-account-removal">Account Removal</a></nav><p><a href="mailto:support@paysme.site">support@paysme.site</a> · <a href="tel:+264836795150">+264 83 679 5150</a></p><p class="footer-owner">Owned &amp; Managed by Mwai PaySME Solutions cc</p></div></footer>';
+    '<footer class="wrap footer"><div><a class="footer-brand" href="#browse">SeekGRNJobs</a><p>Independent application preparation tool for Namibia’s Public Service.</p><div class="footer-details"><nav class="footer-legal" aria-label="Legal"><a href="#terms">Terms of Service</a><span aria-hidden="true">|</span><a href="#privacy">Privacy Policy</a><span aria-hidden="true">|</span><a href="/request-account-removal">Account Removal</a></nav><p><a href="mailto:support@paysme.site">support@paysme.site</a> · <a href="tel:+264836795150">+264 83 679 5150</a></p><p class="footer-owner">Owned &amp; Managed by Mwai PaySME Solutions cc</p></div></div></footer>';
 }
 function sectionHeading(label, title, subtitle) {
   return '<div class="page-head"><span class="eyebrow">'+escape(label)+'</span><h1>'+escape(title)+'</h1><p>'+escape(subtitle)+'</p></div>';
@@ -206,7 +206,11 @@ function render() {
   document.body.classList.toggle('has-app-nav',Boolean(user&&!registrationPending()));
   root.innerHTML=shell(({browse,profile,documents,admin,circular,subscription:subscriptionPage,terms:()=>legalPage('terms'),privacy:()=>legalPage('privacy'),removal:()=>removalPage(user)})[state.view]());
   root.querySelector('#removal-form')?.addEventListener('submit',submitRemoval);
-  if(state.view==='subscription'&&user&&!isAdmin)closeSubscription=mountSubscription(root.querySelector('.subscription-page'),s=>{state.subscription=s;});
+  if(state.view==='subscription'&&user&&!isAdmin)closeSubscription=mountSubscription(
+    root.querySelector('.subscription-page'),
+    s=>{state.subscription=s;},
+    ()=>openAccount(reloadAccount,'town')
+  );
   renderJobs();
   if(state.view==='circular'&&user&&!registrationPending()) {
     const container=root.querySelector('#circular-viewer');

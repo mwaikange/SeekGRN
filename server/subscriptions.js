@@ -1,6 +1,8 @@
 import {createClient} from '@supabase/supabase-js';
 import {PLANS} from '../src/subscription-plans.js';
 import {PAYSME_RETURN_URL} from '../src/payment-config.js';
+import {checkoutTown} from '../src/paysme-towns.js';
+import {verifiedContacts} from '../src/auth-service.js';
 export const PROJECT_URL='https://dmrtrkhjlarjzhaxyflf.supabase.co';
 const PUBLIC_KEY='sb_publishable_zWaAa_AY_6HO8d3PDLRw2Q_tMk6OrmD';
 export function merchantConfig(env){
@@ -23,15 +25,22 @@ export function createOrderHandler({env=process.env,client=(token)=>database(env
   if(!token)return fail(401,'Sign in to choose a subscription.');
   let body=req.body;
   try{if(typeof body==='string')body=JSON.parse(body);}catch{return fail(400,'Invalid request.');}
-  if(!body||typeof body.plan!=='string'||!Object.hasOwn(PLANS,body.plan)||typeof body.town!=='string'||!body.town.trim()||body.town.length>100||/[<>\r\n]/.test(body.town))return fail(400,'Choose a package and enter your town.');
+  if(!body||typeof body.plan!=='string'||!Object.hasOwn(PLANS,body.plan))return fail(400,'Choose a valid package.');
   const config=merchantConfig(env);
   if(!config)return fail(503,'Subscriptions are not available for payment yet. Please try again later.');
   try{
    const db=client(token);const auth=await db.auth.getUser(token);
    if(auth.error||!auth.data?.user)return fail(401,'Sign in again to continue.');
-   const {data,error}=await db.rpc('create_subscription_order',{p_plan:body.plan,p_town:body.town.trim()});
-   if(error)return fail(400,error.code==='P0001'?error.message:'Unable to prepare your payment request. Please try again.');
-   return res.status(200).json({order:data,checkout:{...config,invoice_id:data.invoice_id,amount_nad:data.amount,mobile:auth.data.user.phone,email:auth.data.user.email,town:data.town,idempotency_key:'seekgrn-'+data.invoice_id,redirect_url:PAYSME_RETURN_URL}});
+   const account=auth.data.user;
+   if(!verifiedContacts(account))return fail(403,'Verify your email and mobile before subscribing.');
+   if(!checkoutTown(account))return fail(400,'Save your town in My account before subscribing.');
+   if(!/^\+?264(?:81|83|85)\d{7}$/.test(account.phone))return fail(400,'PaySME requires a verified 081, 083 or 085 mobile number.');
+   const {data,error}=await db.rpc('create_subscription_order',{p_plan:body.plan});
+   if(error){
+    if(error.code==='P0409')return fail(409,error.message);
+    return fail(error.code==='P0001'?400:503,error.code==='P0001'?error.message:'Unable to prepare your payment request. Please try again.');
+   }
+   return res.status(200).json({order:data,checkout:{...config,invoice_id:data.invoice_id,amount_nad:data.amount,mobile:account.phone,email:account.email,town:data.town,idempotency_key:'seekgrn-'+data.invoice_id,redirect_url:PAYSME_RETURN_URL}});
   }catch{return fail(503,'Unable to prepare your payment request. Please try again.');}
  };
 }

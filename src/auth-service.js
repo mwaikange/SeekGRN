@@ -1,3 +1,10 @@
+import {PAYSME_TOWNS} from './paysme-towns.js';
+
+export function selectedTown(town) {
+  if (!PAYSME_TOWNS.includes(town)) throw new Error('Choose your town from the list.');
+  return town;
+}
+
 export function namibianPhone(value) {
   let digits = String(value ?? '').replace(/[\s()-]/g, '');
   if (digits.startsWith('+264')) digits = digits.slice(4);
@@ -23,12 +30,12 @@ export function contactProgress(account, enteredPhone = account?.phone || '') {
 
 // Use confirmed Auth fields, including provider-confirmed email, rather than
 // editable user metadata or a browser flag from a previous OAuth attempt.
-export async function continueContactVerification(auth, account, {email, phone, redirectTo}) {
+export async function continueContactVerification(auth, account, {email, phone, town, redirectTo}) {
   if (!account?.id) throw new Error('Sign in again to verify your contact details.');
   const step = contactProgress(account, phone).next;
   if (step === 'complete') return {complete: true};
   if (step === 'mobile') {
-    const number = await sendPhoneCode(auth, phone);
+    const number = await sendPhoneCode(auth, phone, town);
     return {challenge: {phone: number, type: 'phone_change'}};
   }
   let result, challenge;
@@ -45,18 +52,18 @@ export async function continueContactVerification(auth, account, {email, phone, 
 
 // Email is the initial identity for every registration. Attach the phone only
 // after email confirmation so both contacts belong to the same Auth user.
-export async function registerAccount(auth, {email, phone, password, redirectTo}) {
-  const contact = {email: email.trim().toLowerCase(), phone: namibianPhone(phone)};
+export async function registerAccount(auth, {email, phone, town, password, redirectTo}) {
+  const contact = {email: email.trim().toLowerCase(), phone: namibianPhone(phone), town: selectedTown(town)};
   const result = await auth.signUp({email: contact.email, password,
-    options: {emailRedirectTo: redirectTo, data: {contact_phone: contact.phone}}});
+    options: {emailRedirectTo: redirectTo, data: {contact_phone: contact.phone, checkout_town: contact.town}}});
   if (result.error) throw result.error;
   if (result.data.user?.identities?.length === 0) throw new Error('An account may already use this email. Sign in or reset your password.');
   return {...result.data, ...contact};
 }
 
-export async function sendPhoneCode(auth, value) {
+export async function sendPhoneCode(auth, value, town) {
   const phone = namibianPhone(value);
-  const {error} = await auth.updateUser({phone});
+  const {error} = await auth.updateUser({phone, data: {checkout_town: selectedTown(town)}});
   if (error) throw error;
   return phone;
 }
