@@ -16,16 +16,17 @@ Continue when the command prints `True`. If it reports a 404 or DNS error, check
 
 ## 2. Scan in Expo Go
 
-Run these commands in the VS Code PowerShell terminal:
+Open the `mobile` folder in the VS Code PowerShell terminal. On a fresh checkout or after a dependency change, run `npm ci` and wait for it to finish. With dependencies installed, start Expo Go:
 
 ```powershell
 Set-Location 'C:\Users\clien\OneDrive\Documentos\ChatGPT\seekGRN\mobile'
-npm ci
 npm run check
-npm start -- --clear
+npm start
 ```
 
 Scan the QR code with Expo Go for SDK 58 on Android. Use `npm start -- --tunnel` if Expo Go cannot reach Metro over your local network.
+
+The npm scripts call the Expo CLI installed in `mobile/node_modules`. If Metro previously reported an error from `AppData\Roaming\npm\node_modules\expo`, exit Metro with `Ctrl+C` and run `npm start -- --clear` once. Scan the new QR code after Metro starts.
 
 To scan against the local web source before deploying, start `npm run dev -- --host 0.0.0.0` in a separate terminal at the repository root. In the `mobile` terminal, set the network URL printed by Vite and start Metro. Keep the phone and computer on the same Wi-Fi network.
 

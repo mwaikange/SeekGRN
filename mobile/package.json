@@ -5,9 +5,9 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "expo start --go",
-    "android": "expo start --go --android",
-    "check": "expo install --check"
+    "start": "node ./node_modules/expo/bin/cli start --go",
+    "android": "node ./node_modules/expo/bin/cli start --go --android",
+    "check": "node ./node_modules/expo/bin/cli install --check"
   },
   "dependencies": {
     "expo": "~58.0.0",
