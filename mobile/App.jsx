@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, BackHandler, Linking, StatusBar, StyleSheet, View } from 'react-native';
+import { Alert, AppState, BackHandler, Linking, StatusBar, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as Updates from 'expo-updates';
 import { WebView } from 'react-native-webview';
 import { exportFile, pickFile } from './files';
 import LaunchScreen from './LaunchScreen';
-import { isWorkspace, startsDocument } from './workspace';
+import { isOAuthLaunch, isWorkspace, readOAuthCallback, startsDocument } from './workspace';
 
 const production = __DEV__ ? process.env.EXPO_PUBLIC_SEEKGRN_PLAY === '1' : Updates.channel !== 'preview';
 const liveOrigin = 'https://seek.paysme.site';
 const localOrigin = __DEV__ && process.env.EXPO_PUBLIC_SEEKGRN_DEV_ORIGIN?.replace(/\/$/, '');
 const origin = localOrigin && /^https?:\/\/[\w.-]+(?::\d+)?$/.test(localOrigin) ? localOrigin : liveOrigin;
 const mode = production ? 'play' : 'preview';
+const oauthSupported = !__DEV__;
+const appAgent = `SeekGRNApp/1-${production ? 'Play' : 'Preview'}${oauthSupported ? ' SeekGRNOAuth/1' : ''}`;
 const source = { uri: `${origin}/?client=${mode}` };
 const bridge = 'seekgrn-mobile-v1';
 const loadTimeout = 35000;
@@ -45,6 +47,7 @@ export default function App() {
   const session = useRef(null);
   const pageUrl = useRef(source.uri);
   const busy = useRef(false);
+  const oauth = useRef(null);
   const [attempt, setAttempt] = useState(0);
   const [screen, setScreen] = useState('loading');
   const [error, setError] = useState('');
@@ -58,6 +61,39 @@ export default function App() {
     return () => subscription.remove();
   }, []);
 
+  function finishOAuth(code, error) {
+    const pending = oauth.current;
+    if (!pending) return;
+    oauth.current = null;
+    clearTimeout(pending.timeout);
+    clearTimeout(pending.returnTimer);
+    pending.respond(code, error);
+  }
+
+  useEffect(() => {
+    if (!oauthSupported) return;
+    const links = Linking.addEventListener('url', ({ url }) => {
+      if (!oauth.current) return;
+      const result = readOAuthCallback(url);
+      if (result) finishOAuth(result.code ?? null, result.error);
+    });
+    const appState = AppState.addEventListener('change', state => {
+      const pending = oauth.current;
+      if (!pending) return;
+      clearTimeout(pending.returnTimer);
+      if (state === 'background') pending.leftApp = true;
+      if (state === 'active' && pending.leftApp) {
+        // Give Android time to deliver the return URL when coming back from the browser.
+        pending.returnTimer = setTimeout(() => finishOAuth(null), 1500);
+      }
+    });
+    return () => {
+      links.remove();
+      appState.remove();
+      finishOAuth(null);
+    };
+  }, []);
+
   useEffect(() => {
     if (screen !== 'loading') return;
     const timeout = setTimeout(() => {
@@ -69,6 +105,7 @@ export default function App() {
 
   function fail(reason, statusCode) {
     session.current = null;
+    finishOAuth(null);
     const message = launchError(reason, statusCode);
     setError(current => reason === 'bridge-missing' ? current || message : message);
     setScreen('unavailable');
@@ -76,6 +113,7 @@ export default function App() {
 
   function retry() {
     session.current = null;
+    finishOAuth(null);
     canGoBack.current = false;
     pageUrl.current = source.uri;
     setError('');
@@ -108,6 +146,17 @@ export default function App() {
     }
 
     if (busy.current) return respond(null, 'Finish the open file picker first.');
+    if (message.action === 'oauth-sign-in') {
+      if (!oauthSupported || !isOAuthLaunch(message.url)) return respond(null, 'Unable to open this sign-in request.');
+      if (oauth.current) return respond(null, 'Finish the open sign-in request first.');
+      oauth.current = { respond, timeout: setTimeout(() => finishOAuth(null, 'Sign-in timed out. Please try again.'), 8 * 60 * 1000) };
+      try {
+        await Linking.openURL(message.url);
+      } catch {
+        finishOAuth(null, 'Unable to open the browser for sign-in.');
+      }
+      return;
+    }
     busy.current = true;
     try {
       switch (message.action) {
@@ -132,7 +181,7 @@ export default function App() {
             key={attempt}
             ref={web}
             source={source}
-            applicationNameForUserAgent={production ? 'SeekGRNApp/1-Play' : 'SeekGRNApp/1-Preview'}
+            applicationNameForUserAgent={appAgent}
             style={[styles.content, screen !== 'ready' && styles.hidden]}
             importantForAccessibility={screen === 'ready' ? 'auto' : 'no-hide-descendants'}
             originWhitelist={['*']}
@@ -156,6 +205,7 @@ export default function App() {
               pageUrl.current = nativeEvent.url;
               if (session.current && !startsDocument(previousUrl, nativeEvent)) return;
               session.current = null;
+              finishOAuth(null);
               setError('');
               setScreen('loading');
             }}

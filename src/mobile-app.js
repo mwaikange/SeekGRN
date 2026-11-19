@@ -1,3 +1,5 @@
+import {oauthRedirectUrl} from '../mobile/workspace.js';
+
 const appAgent = typeof window !== 'undefined' ? navigator.userAgent.match(/\bSeekGRNApp\/1-(Play|Preview)\b/) : null;
 export const inMobileApp = Boolean(appAgent);
 export const playStoreApp = appAgent?.[1] === 'Play' || (typeof window !== 'undefined' &&
@@ -39,6 +41,17 @@ function request(action,payload={}) {
   try { send({id,action,...payload}); }
   catch(error) { calls.delete(id); reject(error); }
  });
+}
+
+export function mobileOAuthRedirect() {
+ if(!session||!window.ReactNativeWebView||!/\bSeekGRNOAuth\/1\b/.test(navigator.userAgent)){
+  throw new Error('Use the latest installed SeekGRN app for Google or Apple sign-in.');
+ }
+ return oauthRedirectUrl;
+}
+
+export function openMobileOAuth(url) {
+ return request('oauth-sign-in',{url});
 }
 
 export async function pickMobileUpload(kind) {

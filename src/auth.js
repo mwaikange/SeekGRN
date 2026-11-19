@@ -2,7 +2,7 @@ import {supabase,user,isAdmin,providers,refreshAccount} from './backend.js';
 import {icon} from './icons.js';
 import {namibianPhone,selectedTown,registerAccount,verifyContact,verifiedContacts,contactProgress,continueContactVerification} from './auth-service.js';
 import {checkoutTown,PAYSME_TOWNS} from './paysme-towns.js';
-import {inMobileApp} from './mobile-app.js';
+import {inMobileApp,mobileOAuthRedirect,openMobileOAuth} from './mobile-app.js';
 
 const safe = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pendingKey='seekgrn-registration';
@@ -72,7 +72,7 @@ export function openAccount(onChange,initial='login',onSuccess=()=>{}){
    content+='<button id="auth-submit" class="button primary" type="submit" data-label="'+label+'">'+label+icon('arrow')+'</button></form>';
    if(verify)content+='<div class="auth-utilities"><button type="button" class="text-button" id="resend">Resend code</button><button type="button" class="text-button" data-mode="'+(user?'contacts':'login')+'">Use different details</button></div>';
    if(login&&method==='email')content+='<div class="auth-utilities"><button type="button" class="text-button" data-mode="forgot">Forgot password?</button></div>';
-   if((login||signup)&&!inMobileApp)content+='<div class="auth-divider"><span>or continue with</span></div><div class="auth-social">'+['google','apple'].map(provider=>'<button type="button" class="button secondary" data-provider="'+provider+'" '+(!providers[provider]?'disabled title="'+provider[0].toUpperCase()+provider.slice(1)+' sign-in coming soon"':'')+'>'+icon(provider,20)+provider[0].toUpperCase()+provider.slice(1)+'</button>').join('')+'</div>';
+   if(login||signup)content+='<div class="auth-divider"><span>or continue with</span></div><div class="auth-social">'+['google','apple'].map(provider=>'<button type="button" class="button secondary" data-provider="'+provider+'" '+(!providers[provider]?'disabled title="'+provider[0].toUpperCase()+provider.slice(1)+' sign-in coming soon"':'')+'>'+icon(provider,20)+provider[0].toUpperCase()+provider.slice(1)+'</button>').join('')+'</div>';
    if(login||signup)content+='<p class="auth-switch">'+(signup?'Already have an account?':'New to SeekGRNJobs?')+' <button type="button" class="text-button" data-mode="'+(signup?'login':'signup')+'">'+(signup?'Sign in':'Create account')+'</button></p>';
   }
   dialog.dataset.mode=mode;
@@ -83,9 +83,18 @@ export function openAccount(onChange,initial='login',onSuccess=()=>{}){
   dialog.querySelectorAll('[data-mode]').forEach(button=>button.onclick=()=>{if(busy)return;capture();mode=button.dataset.mode;draw();});
   dialog.querySelectorAll('[data-method]').forEach(button=>button.onclick=()=>{if(busy)return;capture();method=button.dataset.method;draw();});
   dialog.querySelectorAll('[data-provider]').forEach(button=>button.onclick=()=>run(async()=>{
+   const redirectTo=inMobileApp?mobileOAuthRedirect():location.origin+'/';
    capture();remember();
-   const {error}=await supabase.auth.signInWithOAuth({provider:button.dataset.provider,options:{redirectTo:location.origin+'/'}});
+   const {data,error}=await supabase.auth.signInWithOAuth({provider:button.dataset.provider,options:{redirectTo,skipBrowserRedirect:inMobileApp}});
    if(error)throw error;
+   if(inMobileApp){
+    message('Complete sign-in in your browser.');
+    const code=await openMobileOAuth(data?.url);
+    if(!code){message('Sign-in cancelled.');return;}
+    const result=await supabase.auth.exchangeCodeForSession(code);
+    if(result.error)throw result.error;
+    await signedIn();
+   }
   },'Opening '+button.dataset.provider+'…'));
   dialog.querySelector('#signout')?.addEventListener('click',()=>run(async()=>{
    const {error}=await supabase.auth.signOut();if(error)throw error;

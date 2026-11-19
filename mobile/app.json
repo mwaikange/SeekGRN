@@ -2,6 +2,7 @@
   "expo": {
     "name": "SeekGRNJobs",
     "slug": "seekgrnjobs",
+    "scheme": "com.mwaikange.seekgrnjobs",
     "version": "1.0.0",
     "platforms": ["android"],
     "icon": "./assets/icon.png",
