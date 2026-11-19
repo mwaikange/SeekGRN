@@ -278,11 +278,11 @@ html{scroll-padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
 .price-card .paysme-r2p-button{width:100%;min-height:46px;padding:0 9px;gap:8px;font-size:clamp(12px,2.8vw,16px);white-space:nowrap}
 .price-card .paysme-r2p-button:disabled:not([aria-busy]){cursor:not-allowed}
 .price-card .paysme-r2p-button-mark{scale:.78}
-.allowance-panel{padding:20px}
+.allowance-panel{--allowance-olive:#222b25;padding:20px}
 .allowance-heading,.allowance-title{display:flex;align-items:center;gap:10px}
 .allowance-heading{justify-content:space-between;flex-wrap:wrap;margin-bottom:10px}
 .allowance-panel h2{font-family:inherit;font-size:20px;margin:0}
-.allowance-panel.is-active{--allowance-olive:#222b25;background:#f0b429;border-color:var(--allowance-olive);color:var(--allowance-olive)}
+.allowance-panel.is-active{background:#e9a800;border:2px solid var(--allowance-olive);color:var(--allowance-olive)}
 .allowance-pill{display:inline-flex;align-items:center;padding:5px 10px;border:1px solid var(--allowance-olive);border-radius:999px;background:var(--allowance-olive);color:#fff;font-size:13px;font-weight:700}
 .allowance-panel.is-active .button.quiet{color:var(--allowance-olive);border-color:var(--allowance-olive)}
 .allowance-panel [hidden]{display:none}

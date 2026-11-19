@@ -40,7 +40,7 @@ export function subscriptionPage(){
   <div class="panel allowance-panel">
    <div class="allowance-heading">
     <div class="allowance-title">${icon('subscription',24)}<h2>Your Allowance</h2></div>
-    <span class="allowance-pill" hidden>Active Subscription</span>
+    <span class="allowance-pill" hidden></span>
    </div>
    <p id="subscription-status" role="status">Loading your allowance.</p>
    <p id="payment-return-status" role="status" hidden></p>
@@ -99,7 +99,7 @@ function allowanceMessage(status,plan){
  const balance=plan
   ? (status.unlimited?'Unlimited preparations':`${status.remaining||0} preparations left this month${free?` + ${free} free`:''}`)
   : (free?`${free} free preparation${free===1?'':'s'} available`:'Free preparation used');
- const summary=`${plan?allowancePlanNames[plan.id]+' plan':'Free access'} · ${balance}.`;
+ const summary=`${plan?allowancePlanNames[plan.id]+' plan · ':''}${balance}.`;
  const end=status.ends_at?date(status.ends_at):'';
  const upcoming=allowancePlanNames[status.upcoming_plan];
  const start=upcoming&&status.upcoming_at?date(status.upcoming_at):'';
@@ -111,12 +111,22 @@ function allowanceMessage(status,plan){
  return details.join(' ');
 }
 
+function allowancePill(status,plan,order){
+ if(plan)return 'Active Subscription';
+ if(status.upcoming_plan)return 'Subscription Scheduled';
+ if(status.pending_invoices.length||order?.status==='pending')return 'Payment Pending';
+ if(order?.status==='paid'&&order.review_required)return 'Payment Under Review';
+ if(order?.status==='expired')return 'Payment Expired';
+ if(order?.status==='cancelled')return 'Payment Cancelled';
+ return 'Free Access';
+}
+
 export function mountSubscription(container,onStatus=()=>{},onTown=()=>{}){
  const applicantId=user?.id;
  const active=()=>container.isConnected&&user?.id===applicantId;
  const output=container.querySelector('#subscription-status');
  const allowance=container.querySelector('.allowance-panel');
- const activePill=allowance.querySelector('.allowance-pill');
+ const statusPill=allowance.querySelector('.allowance-pill');
  const returnMessage=container.querySelector('#payment-return-status');
  const message=container.querySelector('#payment-message');
  const townButton=container.querySelector('#subscription-account-town');
@@ -156,13 +166,14 @@ export function mountSubscription(container,onStatus=()=>{},onTown=()=>{}){
    if(!active()||busy)return;
    if(!Array.isArray(next.pending_invoices))throw Error(statusError);
    const references=[...new Set([...next.pending_invoices,...(invoice?[invoice]:[])])];
+   let order;
    if(!playStoreApp&&references.length){
     const bearer=await token();
     const results=await Promise.allSettled(references.map(id=>checkInvoice(id,bearer)));
     if(!active()||busy)return;
     const selected=results[0];
     if(selected.status==='fulfilled'){
-     const order=selected.value;
+     order=selected.value;
      const code=paySMECode(order.paysme_code)||paySMECode(sessionStorage.getItem(codeKey(order.invoice_id)));
      show(returnMessage,invoiceMessage(order,code));
     }
@@ -177,13 +188,13 @@ export function mountSubscription(container,onStatus=()=>{},onTown=()=>{}){
    onStatus(next);
    const plan=PLANS[next.plan];
    allowance.classList.toggle('is-active',Boolean(plan));
-   activePill.hidden=!plan;
+   show(statusPill,allowancePill(next,plan,order));
    show(output,allowanceMessage(next,plan));
   }catch(error){
    if(active()&&!busy){
     status=null;
     allowance.classList.remove('is-active');
-    activePill.hidden=true;
+    show(statusPill,'');
     show(output,error.message);
    }
   }finally{
