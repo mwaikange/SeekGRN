@@ -6,7 +6,8 @@ import {checkoutTown} from './paysme-towns.js';
 import {paySMECode} from './paysme-code.js';
 import {playStoreApp} from './mobile-app.js';
 
-const date=value=>new Date(value).toLocaleDateString('en-GB',{timeZone:'Africa/Windhoek'});
+const date=value=>new Date(value).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric',timeZone:'Africa/Windhoek'});
+const allowancePlanNames={monthly:'Monthly',biannual:'Six-month',annual:'Annual'};
 const sdkAvailable=sdk=>typeof sdk?.renderRequestToPayButton==='function'&&typeof sdk?.requestToPay==='function';
 const statusError='Unable to load your allowance. Please try again or contact support@paysme.site.';
 
@@ -37,7 +38,10 @@ export function subscriptionPage(){
  return `<section class="wrap subscription-page">
   <div class="page-head"><span class="eyebrow">YOUR APPLICATION WORKSPACE</span><h1>Subscription</h1><p>${playStoreApp?'Check your access and remaining preparations.':'Choose a package and receive your payment link by SMS.'}</p></div>
   <div class="panel allowance-panel">
-   <div>${icon('subscription',24)}<h2>Your allowance</h2></div>
+   <div class="allowance-heading">
+    <div class="allowance-title">${icon('subscription',24)}<h2>Your Allowance</h2></div>
+    <span class="allowance-pill" hidden>Active Subscription</span>
+   </div>
    <p id="subscription-status" role="status">Loading your allowance.</p>
    <p id="payment-return-status" role="status" hidden></p>
    <p id="payment-message" role="status" hidden></p>
@@ -84,16 +88,35 @@ function invoiceMessage(order,code){
  const reference=code?' for PaySME Code '+code:'';
  if(order.status==='paid'){
   if(order.review_required)return 'Payment received'+reference+'. Contact support@paysme.site to resolve this payment.';
-  return 'Payment confirmed'+reference+'. Your package details are shown above.';
+  return 'Payment confirmed'+reference+'.';
  }
  if(order.status==='cancelled'||order.status==='expired')return 'Payment request'+reference+' '+order.status+'.';
  return 'Awaiting payment'+reference+'. Check your SMS for the PaySME payment link.';
+}
+
+function allowanceMessage(status,plan){
+ const free=status.free_remaining||0;
+ const balance=plan
+  ? (status.unlimited?'Unlimited preparations':`${status.remaining||0} preparations left this month${free?` + ${free} free`:''}`)
+  : (free?`${free} free preparation${free===1?'':'s'} available`:'Free preparation used');
+ const summary=`${plan?allowancePlanNames[plan.id]+' plan':'Free access'} · ${balance}.`;
+ const end=status.ends_at?date(status.ends_at):'';
+ const upcoming=allowancePlanNames[status.upcoming_plan];
+ const start=upcoming&&status.upcoming_at?date(status.upcoming_at):'';
+ const reset=!status.unlimited&&status.renews_at?date(status.renews_at):'';
+ const details=[summary];
+ if(reset&&reset!==end&&reset!==start)details.push(`Monthly allowance resets ${reset}.`);
+ if(end&&end!==start)details.push(`Package ends ${end}.`);
+ if(start)details.push(end===start?`Switches to ${upcoming.toLowerCase()} on ${start}.`:`${upcoming} plan starts ${start}.`);
+ return details.join(' ');
 }
 
 export function mountSubscription(container,onStatus=()=>{},onTown=()=>{}){
  const applicantId=user?.id;
  const active=()=>container.isConnected&&user?.id===applicantId;
  const output=container.querySelector('#subscription-status');
+ const allowance=container.querySelector('.allowance-panel');
+ const activePill=allowance.querySelector('.allowance-pill');
  const returnMessage=container.querySelector('#payment-return-status');
  const message=container.querySelector('#payment-message');
  const townButton=container.querySelector('#subscription-account-town');
@@ -153,9 +176,16 @@ export function mountSubscription(container,onStatus=()=>{},onTown=()=>{}){
    status=next;
    onStatus(next);
    const plan=PLANS[next.plan];
-   show(output,(plan?plan.name+' package':'Free access')+' · '+(next.unlimited?'Unlimited preparations':(next.remaining||0)+' package preparations remaining this month')+' · '+next.free_remaining+' free preparation remaining.'+(next.renews_at?' Monthly period ends '+date(next.renews_at)+'.':'')+(next.ends_at?' Package ends '+date(next.ends_at)+'.':'')+(next.upcoming_plan?' Your '+PLANS[next.upcoming_plan]?.name+' package starts '+date(next.upcoming_at)+'.':''));
+   allowance.classList.toggle('is-active',Boolean(plan));
+   activePill.hidden=!plan;
+   show(output,allowanceMessage(next,plan));
   }catch(error){
-   if(active()&&!busy){status=null;show(output,error.message);}
+   if(active()&&!busy){
+    status=null;
+    allowance.classList.remove('is-active');
+    activePill.hidden=true;
+    show(output,error.message);
+   }
   }finally{
    refreshing=false;
    if(active())syncButtons();
