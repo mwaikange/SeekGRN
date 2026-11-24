@@ -171,6 +171,14 @@ test('fills the official PDFs, retains both pages, and reads applicant fields ba
       assert.equal(values.school.certificate,profile.school.certificate);
       assert.equal(values.school.subjects,profile.school.subjects);
       assert.deepEqual(values.tertiary,profile.tertiary.map(({majors,...row})=>row));
+      const tertiary=filled[1].items.filter(item=>item.str.trim()&&item.transform[5]>=507&&item.transform[5]<=551);
+      assert.equal(new Set(tertiary.map(item=>item.height)).size,1);
+      const subjectLines=tertiary.filter(item=>item.transform[4]===262);
+      assert.deepEqual(subjectLines.map(item=>item.transform[5]).sort((a,b)=>b-a),[550.5,536,517.5]);
+      for(const {obtained} of profile.tertiary){
+        const date=tertiary.find(item=>item.transform[4]===490&&item.str===obtained);
+        assert.ok(subjectLines.some(item=>item.transform[5]===date?.transform[5]));
+      }
       assert.equal(values.experience[0].current,true);
       assert.equal(values.experience[0].to,'');
       assert.match(combined,/Present/);
@@ -178,19 +186,25 @@ test('fills the official PDFs, retains both pages, and reads applicant fields ba
   }
   const supplement = await extractPages(await generated.files[2].blob.arrayBuffer());
   assert.match(pageLines(supplement[0].items), /Synthetic example for PDF testing/);
+  assert.doesNotMatch(pageLines(supplement[0].items), /E1\.2 - Tertiary qualification/);
   const longSubjects = Array.from({length:30},(_,i)=>'Course '+(i+1)+' International Logistics and Procurement').join(', ') + ', Final Capstone Project';
-  const overflow = await prepareForms({...profile,school:{...profile.school,subjects:longSubjects}},job,circular);
+  const overflow = await prepareForms({...profile,school:{...profile.school,subjects:longSubjects},
+    tertiary:profile.tertiary.map((row,i)=>i===0?{...row,subjects:longSubjects}:row)},job,circular);
   const overflowForm=await extractPages(await overflow.files[0].blob.arrayBuffer());
   const overflowSheet=await extractPages(await overflow.files[2].blob.arrayBuffer());
   assert.match(pageLines(overflowForm[1].items),/See addendum/);
-  assert.match(pageLines(overflowSheet[0].items).replace(/\s+/g,' '),/Final Capstone Project/);
+  const overflowText=overflowSheet.map(page=>pageLines(page.items)).join(' ').replace(/\s+/g,' ');
+  assert.match(overflowText,/E1\.2 - Tertiary qualification 1 - All subjects.*Final Capstone Project/);
   const legacy=await prepareForms(profile,{...job,division:undefined,subdivision:undefined,unit:'Water Supply and Sanitation'},{
     ...circular,pdf:'/circular.pdf'
   });
   const legacyForm=await extractPages(await legacy.files[0].blob.arrayBuffer());
   assert.match(pageLines(legacyForm[0].items),/Unit: Water Supply and Sanitation/);
-  const sector=await prepareForms(profile,{...job,subdivision:undefined,sector:'Field Operations'},circular);
+  const shortTertiary=profile.tertiary.map((row,i)=>({...row,subjects:i?'Practical Costing':'Business Procedures'}));
+  const sector=await prepareForms({...profile,tertiary:shortTertiary},{...job,subdivision:undefined,sector:'Field Operations'},circular);
   const sectorForm=await extractPages(await sector.files[0].blob.arrayBuffer());
   assert.match(pageLines(sectorForm[0].items),/Sector: Field Operations/);
   assert.doesNotMatch(pageLines(sectorForm[0].items),/Division: General Support Services/);
+  const shortSubjects=sectorForm[1].items.filter(item=>shortTertiary.some(row=>row.subjects===item.str));
+  assert.deepEqual(shortSubjects.map(item=>item.transform[5]),[550.5,534]);
 });

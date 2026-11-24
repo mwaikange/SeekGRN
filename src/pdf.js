@@ -1,6 +1,13 @@
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { addressLines, addressSlots, employmentSlots, identityBaseline, identityBoxCenters, qualificationSlots, schoolCertificateLines, schoolLines, tertiaryLines } from './form-layout.js';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
+import { addressLines, addressSlots, employmentSlots, identityBaseline, identityBoxCenters, qualificationSlots, schoolCertificateLines, schoolLines, tertiaryFieldLines, tertiarySubjectLines } from './form-layout.js';
 import { vacancyUnitLines } from './circular-parser.js';
+
+const qualificationLabels = {
+ institution: 'Institution',
+ certificate: 'Qualification',
+ subjects: 'All subjects',
+ obtained: 'Month and year obtained'
+};
 
 function wrap(value, font, size, width) {
  const lines = [];
@@ -77,20 +84,50 @@ export async function prepareForms(profile, job, circular) {
    });
   }
   function fitField(label, value, width, baselines, majors='') {
-   const layout=fit(value,width,baselines.length);
-   if(layout.lines.length<=baselines.length)return layout;
+   return withAddendum(label,fit(value,width,baselines.length),baselines.length,majors);
+  }
+  function withAddendum(label, layout, lineCount, majors) {
+   if(layout.lines.length<=lineCount)return layout;
    additional.push([label,layout.input,majors]);
    const marker={value:'See addendum',start:layout.input.length};
-   return {...layout,lines:[...layout.lines.slice(0,baselines.length-1),marker]};
+   return {...layout,lines:[...layout.lines.slice(0,lineCount-1),marker]};
   }
-  function qualification(row, label, baselines) {
-   for (const [key,x,width] of qualificationSlots) {
-    const majors=key==='subjects'?row.majors||'':'';
-    const fieldLines=key==='obtained'?baselines.slice(0,1):key==='certificate'&&baselines===schoolLines?schoolCertificateLines:baselines;
-    const names={institution:'Institution',certificate:'Qualification',subjects:'All subjects',obtained:'Month and year obtained'};
-    const layout=fitField(label+' - '+names[key],row[key],width,fieldLines,majors);
-    drawLines(1,layout,x,fieldLines,majors);
+  function fitTertiary(rows) {
+   // Each qualification gets at least one of the three printed subject lines.
+   const allocations = rows.length === 2 ? [[1, 2], [2, 1]] :
+    [rows.length === 1 ? [tertiarySubjectLines.length] : rows.map(() => 1)];
+   let bestFields;
+   let fewestOverflows = Infinity;
+   let bestLeavesBlankLine = false;
+   for (let size = 8; size >= 6.5; size -= .25) {
+    for (const counts of allocations) {
+     let start = 0;
+     const fields = rows.flatMap((row, index) => {
+      const fields = qualificationSlots.map(([key, x, width]) => {
+       const input = tidy(row[key]);
+       const baselines = tertiaryFieldLines(key, start, counts[index]);
+       return {
+        label: 'E1.2 - Tertiary qualification ' + (index + 1) + ' - ' + qualificationLabels[key],
+        key, x, baselines,
+        majors: key === 'subjects' ? row.majors || '' : '',
+        layout: {input, size, lines: wrap(input, font, size, width)}
+       };
+      });
+      start += counts[index];
+      return fields;
+     });
+     const overflows = fields.filter(({layout, baselines}) => layout.lines.length > baselines.length).length;
+     const leavesBlankLine = rows.length === 2 && counts[0] === 2 &&
+      fields.find(({key}) => key === 'subjects').layout.lines.length === 1;
+     if (!overflows && !leavesBlankLine) return fields;
+     if (overflows < fewestOverflows || (overflows === fewestOverflows && bestLeavesBlankLine && !leavesBlankLine)) {
+      bestFields = fields;
+      fewestOverflows = overflows;
+      bestLeavesBlankLine = leavesBlankLine;
+     }
+    }
    }
+   return bestFields;
   }
   if(type==='application') {
    twoLines(0,[job.title,job.grade&&'Grade '+job.grade,job.reference&&'Ref. '+job.reference].filter(Boolean).join(' / '),48,576,250);
@@ -135,26 +172,19 @@ export async function prepareForms(profile, job, circular) {
    employmentSlots.forEach(([key,x,y,w])=>text(0,profile.employmentType==='Yes'?profile[key]:'N/A',x,y,w));
    if(profile.employmentType==='Yes')text(0,'X',profile.probation==='Yes'?305:380,82,12);
    profile.languages.forEach((row,i)=>{const x=130+i*75;if(i)text(1,row.language,x,724,70);['speak','read','write'].forEach((key,j)=>text(1,row[key],x,711-j*13,70));});
-   if(Object.values(profile.school).some(Boolean))qualification(profile.school,'E1.1 - School qualification',schoolLines);
+   if(Object.values(profile.school).some(Boolean)){
+    for(const [key,x,width] of qualificationSlots){
+     const baselines=key==='obtained'?schoolLines.slice(0,1):key==='certificate'?schoolCertificateLines:schoolLines;
+     const majors=key==='subjects'?profile.school.majors||'':'';
+     const layout=fitField('E1.1 - School qualification - '+qualificationLabels[key],profile.school[key],width,baselines,majors);
+     drawLines(1,layout,x,baselines,majors);
+    }
+   }
    const tertiary=profile.tertiary.filter(row=>Object.values(row).some(Boolean));
    if(tertiary.length){
-    // Reflow the dotted subject guides with the rest of the tertiary cells.
-    for(const y of [547.8,531.2,514.8]){
-     pages[1].drawRectangle({x:260.5,y:y-.6,width:215.5,height:2.3,color:rgb(1,1,1)});
+    for(const {label,x,baselines,majors,layout} of fitTertiary(tertiary)){
+     drawLines(1,withAddendum(label,layout,baselines.length,majors),x,baselines,majors);
     }
-    const needs=tertiary.map(row=>Math.max(...qualificationSlots.filter(([key])=>key!=='obtained').map(([key,,width])=>fit(row[key],width,1).lines.length)));
-    const counts=tertiary.map(()=>1);
-    let spare=tertiaryLines.length-tertiary.length;
-    for(const [index,need] of [...needs.entries()].sort((a,b)=>a[1]-b[1])){
-     const extra=Math.min(need-1,spare);
-     counts[index]+=extra;
-     spare-=extra;
-    }
-    let start=0;
-    tertiary.forEach((row,i)=>{
-     qualification(row,'E1.2 - Tertiary qualification '+(i+1),tertiaryLines.slice(start,start+counts[i]));
-     start+=counts[i];
-    });
    }
    text(1,profile.study,215,499,365);text(1,profile.apprenticeship,272,475,24);text(1,profile.agreement,360,475,53);text(1,profile.training,465,475,115);text(1,profile.statutory,48,436,530);
    profile.experience.forEach((row,i)=>{

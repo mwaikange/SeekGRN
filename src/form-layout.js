@@ -7,7 +7,19 @@ export const employmentSlots = [['ministry',208,128,150],['station',430,128,150]
 export const qualificationSlots = [['institution',47,108],['certificate',161,94],['subjects',262,212],['obtained',490,90]];
 export const schoolLines = [612,595.5,579];
 export const schoolCertificateLines = [600,589.5,579];
-export const tertiaryLines = [540.5,532.5,524.5,516.5,508.5];
+// The printed guides are at 547.78, 531.19 and 514.75. Subject text sits just above each one.
+export const tertiarySubjectLines = [550.5,534,517.5];
+const tertiaryInstitutionLines = [[540,532.5],[525],[516.75,509]];
+const legacyTertiaryLines = [540.5,532.5,524.5,516.5,508.5];
+export function tertiaryFieldLines(key,start,count) {
+ const baselines=tertiarySubjectLines.slice(start,start+count);
+ if(key==='obtained')return baselines.slice(0,1);
+ if(key==='certificate')return baselines.flatMap(y=>[y,y-7.5]);
+ // The section caption occupies the top of the institution column.
+ if(key==='institution')return tertiaryInstitutionLines.slice(start,start+count).flat();
+ // A slightly lifted continuation leaves more room before the next qualification.
+ return baselines.map((y,i)=>i?y+2:y);
+}
 export function readProfileSlots(pages,type='application') {
  const p={};
  const at=(page,x,y,width)=>{const value=(pages[page]?.items||[]).filter(i=>Math.abs(i.transform[5]-y)<3&&i.transform[4]>=x-1&&i.transform[4]<x+width).sort((a,b)=>a.transform[4]-b.transform[4]).map(i=>i.str).join(' ').trim();return value&&!ignored.test(value)?value:'';};
@@ -37,9 +49,17 @@ export function readProfileSlots(pages,type='application') {
  school.certificate=qualificationLines(schoolCertificateLines).certificate||qualification(595).certificate;
  if(school.institution||school.certificate)p.school=school;
  const tertiary=[];
- if(at(1,490,tertiaryLines[0],90)){
-  const starts=tertiaryLines.map((y,i)=>at(1,490,y,90)?i:-1).filter(i=>i>=0);
-  for(const [i,start] of starts.entries())tertiary.push(qualificationLines(tertiaryLines.slice(start,starts[i+1])));
+ if(at(1,490,tertiarySubjectLines[0],90)){
+  const starts=tertiarySubjectLines.map((y,i)=>at(1,490,y,90)?i:-1).filter(i=>i>=0);
+  for(const [i,start] of starts.entries()){
+   const count=(starts[i+1]??tertiarySubjectLines.length)-start;
+   tertiary.push(Object.fromEntries(qualificationSlots.map(([key,x,width])=>[
+    key,tertiaryFieldLines(key,start,count).map(y=>at(1,x,y,width)).filter(Boolean).join(' ')
+   ])));
+  }
+ }else if(at(1,490,legacyTertiaryLines[0],90)){
+  const starts=legacyTertiaryLines.map((y,i)=>at(1,490,y,90)?i:-1).filter(i=>i>=0);
+  for(const [i,start] of starts.entries())tertiary.push(qualificationLines(legacyTertiaryLines.slice(start,starts[i+1])));
  }else{
   for(let i=0;i<3;i++){const row=qualification(536-i*12);if(row.institution||row.certificate)tertiary.push(row);}
  }
