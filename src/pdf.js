@@ -29,9 +29,8 @@ export async function prepareForms(profile, job, circular) {
   const doc=await PDFDocument.load(await response.arrayBuffer());
   const font=await doc.embedFont(StandardFonts.Helvetica);
   const pages=doc.getPages();
-  function text(page,value,x,y,width=180) {
+  function text(page,value,x,y,width=180,size=8) {
    const valueText=tidy(value);
-   let size=8;
    while(font.widthOfTextAtSize(valueText,size)>width&&size>5)size-=.25;
    if(font.widthOfTextAtSize(valueText,size)>width)throw new Error('Shorten this entry to fit the official form: '+valueText.slice(0,50));
    pages[page].drawText(valueText,{x,y,size,font}); return {valueText,size};
@@ -97,22 +96,22 @@ export async function prepareForms(profile, job, circular) {
    twoLines(0,[job.title,job.grade&&'Grade '+job.grade,job.reference&&'Ref. '+job.reference].filter(Boolean).join(' / '),48,576,250);
    const unit=vacancyUnitLines(job).at(-1);
    const ministry=fit(job.org,245,1,6);
-   if(ministry.lines.length===1){
-    drawLines(0,ministry,334,[576.5]);
-    if(unit){
-     const layout=fit(unit,245,1,5.75);
-     if(layout.lines.length===1)drawLines(0,layout,334,[565.5]);
-     else{
-      additional.push(['A2 - Office, ministry, agency or regional council',tidy(job.org)+' / '+tidy(unit)]);
-      drawLines(0,fit('See addendum for organisational details',245,1),334,[565.5]);
-     }
+   const heading=unit?fit(unit,245,1,5.75):null;
+   if(ministry.lines.length>1||heading?.lines.length>1){
+    additional.push(['A2 - Office, ministry, agency or regional council',[ministry.input,heading?.input].filter(Boolean).join(' / ')]);
+   }
+   for(const [layout,y] of [[ministry,576.5],[heading,565.5]]){
+    if(!layout)continue;
+    if(layout.lines.length>1){
+     const suffix='…';
+     const [{value}]=wrap(layout.input,font,layout.size,245-font.widthOfTextAtSize(suffix,layout.size));
+     layout.lines=[{value:value+suffix,start:0}];
     }
-   }else{
-    drawLines(0,fitField('A2 - Office, ministry, agency or regional council',[job.org,unit].filter(Boolean).join(' / '),245,[576.5,565.5]),334,[576.5,565.5]);
+    drawLines(0,layout,334,[y]);
    }
    twoLines(0,job.station,48,543,250);text(0,profile.available,444,554,137);text(0,circular.title,384,532,195);text(0,circular.advertised,356,521,220);
-   const slots=[['surname',48,472,380],['maiden',48,450,380],['names',48,428,380],['birth',265,403,160],['passport',113,382,140],['citizenship',108,371,145],['permit',340,393,90],['home',104,294,100],['mobile',255,294,113],['work',414,294,80],['fax',528,294,52],['email',86,284,280],['faxmail',425,284,155],['alternate',194,273,170],['alternatePhone',456,273,124]];
-   slots.forEach(([key,x,y,w])=>text(0,profile[key],x,y,w));
+   const slots=[['surname',48,472,380,11],['maiden',48,450,380],['names',48,428,380,11],['birth',265,403,160],['passport',113,382,140],['citizenship',108,371,145],['permit',340,393,90],['home',104,294,100],['mobile',255,294,113],['work',414,294,80],['fax',528,294,52],['email',86,284,280],['faxmail',425,284,155],['alternate',194,273,170],['alternatePhone',456,273,124]];
+   slots.forEach(([key,x,y,width,size])=>text(0,profile[key],x,y,width,size));
    const identity=String(profile.identity??'').replace(/[\s-]/g,'');
    if(identity.length>identityBoxCenters.length||/\D/.test(identity))throw new Error('Enter up to 14 digits in the Namibian identity number field.');
    [...identity].forEach((digit,i)=>{

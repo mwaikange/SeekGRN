@@ -155,11 +155,15 @@ test('fills the official PDFs, retains both pages, and reads applicant fields ba
     assert.equal(values.surname, 'EXAMPLE');
     assert.equal(values.identity, '90010101001');
     if(type==='application'){
-      assert.match(combined,/Subdivision: Resources Management/);
+      assert.ok(filled[0].items.some(i=>i.str==='Oshikoto Regional Council'&&i.transform[5]===576.5));
+      assert.ok(filled[0].items.some(i=>i.str==='Subdivision: Resources Management'&&i.transform[5]===565.5));
+      assert.equal(filled[0].items.find(i=>i.str==='EXAMPLE')?.height,11);
+      assert.equal(filled[0].items.find(i=>i.str==='TEST APPLICANT')?.height,11);
       assert.doesNotMatch(combined,/Division: General Support Services/);
       assert.equal(filled[0].items.filter(i=>i.str==='N/A'&&i.transform[5]>=95&&i.transform[5]<=128).length,7);
       const idDigits=filled[0].items.filter(i=>/^\d$/.test(i.str)&&i.transform[5]===404&&i.transform[4]<258);
       assert.equal(idDigits.length,profile.identity.length);
+      assert.ok(idDigits.every(i=>i.height===8));
       const centers=[49.02,64.99,80.97,96.93,112.89,128.85,144.75,160.71,176.61,192.58,208.55];
       assert.ok(idDigits.every((i,index)=>Math.abs(i.transform[4]+i.width/2-centers[index])<.05));
       assert.equal(values.postal,profile.postal);
