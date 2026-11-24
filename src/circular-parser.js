@@ -20,13 +20,13 @@ export function pageLines(items) {
 
 const tidy=s=>s.replace(/Post s/g,'Posts').replace(/\bW indhoek\b/g,'Windhoek').replace(/\bP osts?\b/g,m=>m.replace(' ','')).replace(/COUNC IL/g,'COUNCIL').replace(/LABOU R/g,'LABOUR').replace(/Gra de/g,'Grade').replace(/A dministrative/g,'Administrative').replace(/P harmacist/g,'Pharmacist').replace(/D istrict/g,'District').replace(/O ffice/g,'Office').replace(/Office r/g,'Officer').trim();
 const fixCase=s=>s===s.toUpperCase()?s.toLowerCase().replace(/(^|[\s/-])([a-z])/g,(_,p,c)=>p+c.toUpperCase()).replace(/\b(Of|The|And|For)\b/g,w=>w.toLowerCase()):s;
-const unitLabels={department:'Department',directorate:'Directorate',division:'Division',subdivision:'Subdivision',section:'Section'};
+const unitLabels={department:'Department',directorate:'Directorate',division:'Division',subdivision:'Subdivision',sector:'Sector',section:'Section'};
 const unitKeys=Object.keys(unitLabels);
 const headingKey=value=>value.replace(/[\s-]/g,'').toLowerCase();
 
 function readUnitHeadings(line) {
  if(!Object.hasOwn(unitLabels,headingKey(line.split(':',1)[0])))return [];
- const matches=[...line.matchAll(/(?:^|\s*[:/|]\s*|\s+)(department|directorate|division|sub[\s-]*division|section)\s*:\s*/gi)];
+ const matches=[...line.matchAll(/(?:^|\s*[:/|]\s*|\s+)(department|directorate|division|sub[\s-]*division|sector|section)\s*:\s*/gi)];
  return matches.map((match,index)=>[
   headingKey(match[1]),
   line.slice(match.index+match[0].length,matches[index+1]?.index).trim()

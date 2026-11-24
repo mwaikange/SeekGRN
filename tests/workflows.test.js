@@ -73,6 +73,7 @@ test('stores the available workplace headings and formats legacy vacancy records
     'Department: Operations',
     'Directorate: General Services',
     'Division: Finance / Sub-Division: Payroll',
+    'Sector: Compensation',
     'Section: Salaries',
     'Post Designation: Administrative Officer Grade 8',
     'Duty Station: Windhoek',
@@ -82,7 +83,7 @@ test('stores the available workplace headings and formats legacy vacancy records
     'Duty Station: Outjo'
   ].join('\n')]);
   assert.deepEqual(vacancyUnitLines(jobs[0]),[
-    'Department: Operations','Directorate: General Services','Division: Finance','Subdivision: Payroll','Section: Salaries'
+    'Department: Operations','Directorate: General Services','Division: Finance','Subdivision: Payroll','Sector: Compensation','Section: Salaries'
   ]);
   assert.deepEqual(vacancyUnitLines(jobs[1]),['Department: Operations','Directorate: Field Services']);
   assert.deepEqual(vacancyUnitLines({unit:'Water Supply and Sanitation'}),['Unit: Water Supply and Sanitation']);
@@ -118,10 +119,10 @@ test('fills the official PDFs, retains both pages, and reads applicant fields ba
     email: 'applicant@example.invalid', postal: 'PO Box 10\nExample Town, Namibia', residential: '44 Example Street\nExample Town, Namibia',
     available: 'Immediately', employmentType: 'No', height: '172', mass: '63',
     languages: [{ language: 'English', speak: 'Good', read: 'Good', write: 'Good' }],
-    school: { institution: 'Example School', certificate: 'NSSCO', subjects: 'English, Afrikaans, Mathematics, Economics, Principles of Accounting, Business Studies, Physical Science, Geography, Computer Studies, History, Development Studies', majors: 'Principles of Accounting', obtained: 'Dec 2008' },
+    school: { institution: 'Example School', certificate: 'NSSCO', subjects: 'English, Afrikaans, Mathematics, Economics, Principles of Accounting, Business Studies, Physical Science, Geography, Computer Studies, History, Development Studies', majors: 'Principles of Accounting,   ,', obtained: 'Dec 2008' },
     tertiary: [
       {institution:'Example Polytechnic',certificate:'Diploma in Business Administration and Management',subjects:'Business Procedures, Economics Control, Social Sciences, Business Communication', obtained:'April 2012'},
-      {institution:'Example Polytechnic',certificate:'Certificate in Applied Business Processes',subjects:'Applied Business Economics, Practical Costing, Transport and Logistics',obtained:'April 2010'}
+      {institution:'Example Polytechnic',certificate:'Certificate in Applied Business Processes',subjects:'Applied Business Economics, Practical Costing, Transport and Logistics',majors:'   ',obtained:'April 2010'}
     ],
     experience: [{employer:'Example Office',post:'Officer',from:'2012-04-01',current:true,to:'2014-06-30'}],
     convicted: 'Yes', convictedDetails: 'Synthetic example for PDF testing.'
@@ -154,7 +155,8 @@ test('fills the official PDFs, retains both pages, and reads applicant fields ba
     assert.equal(values.surname, 'EXAMPLE');
     assert.equal(values.identity, '90010101001');
     if(type==='application'){
-      assert.match(combined,/Division: General Support Services \/ Subdivision: Resources Management/);
+      assert.match(combined,/Subdivision: Resources Management/);
+      assert.doesNotMatch(combined,/Division: General Support Services/);
       assert.equal(filled[0].items.filter(i=>i.str==='N/A'&&i.transform[5]>=95&&i.transform[5]<=128).length,7);
       const idDigits=filled[0].items.filter(i=>/^\d$/.test(i.str)&&i.transform[5]===404&&i.transform[4]<258);
       assert.equal(idDigits.length,profile.identity.length);
@@ -164,7 +166,7 @@ test('fills the official PDFs, retains both pages, and reads applicant fields ba
       assert.equal(values.residential,profile.residential);
       assert.equal(values.school.certificate,profile.school.certificate);
       assert.equal(values.school.subjects,profile.school.subjects);
-      assert.deepEqual(values.tertiary,profile.tertiary);
+      assert.deepEqual(values.tertiary,profile.tertiary.map(({majors,...row})=>row));
       assert.equal(values.experience[0].current,true);
       assert.equal(values.experience[0].to,'');
       assert.match(combined,/Present/);
@@ -183,4 +185,8 @@ test('fills the official PDFs, retains both pages, and reads applicant fields ba
   });
   const legacyForm=await extractPages(await legacy.files[0].blob.arrayBuffer());
   assert.match(pageLines(legacyForm[0].items),/Unit: Water Supply and Sanitation/);
+  const sector=await prepareForms(profile,{...job,subdivision:undefined,sector:'Field Operations'},circular);
+  const sectorForm=await extractPages(await sector.files[0].blob.arrayBuffer());
+  assert.match(pageLines(sectorForm[0].items),/Sector: Field Operations/);
+  assert.doesNotMatch(pageLines(sectorForm[0].items),/Division: General Support Services/);
 });

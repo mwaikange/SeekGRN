@@ -57,7 +57,7 @@ export async function prepareForms(profile, job, circular) {
   }
   function drawLines(page, layout, x, baselines, majors='') {
    const {input, size, lines} = layout;
-   const ranges = majors.split(',').map(tidy).filter(major=>major!=='N/A').flatMap(major=>{
+   const ranges = majors.split(',').map(tidy).filter(major=>major&&major!=='N/A').flatMap(major=>{
     const value = input.toLowerCase();
     const term = major.toLowerCase();
     const found = [];
@@ -95,7 +95,7 @@ export async function prepareForms(profile, job, circular) {
   }
   if(type==='application') {
    twoLines(0,[job.title,job.grade&&'Grade '+job.grade,job.reference&&'Ref. '+job.reference].filter(Boolean).join(' / '),48,576,250);
-   const unit=vacancyUnitLines(job).join(' / ');
+   const unit=vacancyUnitLines(job).at(-1);
    const ministry=fit(job.org,245,1,6);
    if(ministry.lines.length===1){
     drawLines(0,ministry,334,[576.5]);
