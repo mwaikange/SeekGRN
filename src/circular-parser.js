@@ -48,10 +48,11 @@ export function vacancyUnitLines(job) {
 export function withBundledVacancyUnits(circular, index) {
  if(circular.pdf!=='/circular.pdf'||circular.title!==index.title||
     circular.advertised!==index.advertised||circular.closes!==index.closes)return circular;
- const stationKey=value=>String(value??'').trim().replace(/\s*:\s*/g,':');
+ // PDF readers can insert spaces inside words. Keep the original text and normalize only for matching.
+ const fieldKey=value=>String(value??'').replace(/\s+/g,'');
  const jobs=circular.jobs.map(job=>{
   const entry=index.jobs[job.id];
-  if(!entry||entry.title!==job.title||entry.org!==job.org||stationKey(entry.station)!==stationKey(job.station))return job;
+  if(!entry||!['title','org','station'].every(key=>fieldKey(entry[key])===fieldKey(job[key])))return job;
   const {title,org,station,...headings}=entry;
   return {...headings,...job};
  });

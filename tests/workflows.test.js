@@ -44,7 +44,11 @@ test('reads the supplied 108-page circular and its individual duty stations', as
   for(const [id,{title,org,station,...headings}] of Object.entries(index.jobs)){
     for(const [key,value] of Object.entries(headings))assert.equal(indexedJobs.get(id)?.[key],value,id);
   }
-  const listing=legacy.find(job=>index.jobs[job.id]);
+  const listing=legacy.find(job=>job.id==='psm-2026-12-07-1');
+  const spaced={...listing,title:'Di rector',org:'Office of the Prime  Minister',station:'Wind hoek'};
+  const [matched]=withBundledVacancyUnits({...circular,jobs:[spaced]},index).jobs;
+  assert.equal(matched.directorate,'ORGANIZATIONAL DEVELOPMENT AND GRADING');
+  assert.equal(matched.station,'Wind hoek');
   const edited={...listing,station:'Another location'};
   assert.deepEqual(withBundledVacancyUnits({...circular,jobs:[edited]},index).jobs,[edited]);
   const uploaded={...circular,pdf:new Blob()};
