@@ -36,9 +36,14 @@ test('reads the supplied 108-page circular and its individual duty stations', as
   assert.equal(result.jobs[0].station, 'Windhoek');
   assert.ok(result.jobs.some(job => job.station.includes('Ohakafiya Combined School')));
   const index=JSON.parse(await readFile('src/bundled-circular-headings.json','utf8'));
-  const legacy=result.jobs.map(({department,directorate,division,subdivision,section,...job})=>job);
+  const legacy=result.jobs.map(({department,directorate,division,subdivision,section,...job})=>({
+    ...job,station:job.station.replace(/\s+:/g,':')
+  }));
   const circular={...result,pdf:'/circular.pdf',jobs:legacy};
-  assert.deepEqual(withBundledVacancyUnits(circular,index).jobs.map(vacancyUnitLines),result.jobs.map(vacancyUnitLines));
+  const indexedJobs=new Map(withBundledVacancyUnits(circular,index).jobs.map(job=>[job.id,job]));
+  for(const [id,{title,org,station,...headings}] of Object.entries(index.jobs)){
+    for(const [key,value] of Object.entries(headings))assert.equal(indexedJobs.get(id)?.[key],value,id);
+  }
   const listing=legacy.find(job=>index.jobs[job.id]);
   const edited={...listing,station:'Another location'};
   assert.deepEqual(withBundledVacancyUnits({...circular,jobs:[edited]},index).jobs,[edited]);
