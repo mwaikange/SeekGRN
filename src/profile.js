@@ -2,7 +2,7 @@ export const personal = [
   ['surname','Surname'], ['maiden','Maiden name'], ['names','First names'], ['identity','Namibian identity number'],
   ['birth','Date of birth','date'], ['passport','Passport number'], ['citizenship','Citizenship'], ['permit','Work permit number'],
   ['gender','Gender',['Male','Female']], ['marital','Marital status',['Married','Single']],
-  ['postal','Postal address'], ['residential','Residential address'], ['home','Home telephone','tel'], ['mobile','Mobile number','tel'],
+  ['postal','Postal address','textarea'], ['residential','Residential address','textarea'], ['home','Home telephone','tel'], ['mobile','Mobile number','tel'],
   ['work','Work telephone','tel'], ['fax','Fax'], ['email','Email','email'], ['faxmail','Fax2mail'], ['alternate','Alternative contact name'],
   ['alternatePhone','Alternative contact telephone','tel'], ['available','When can you assume duty?']
 ];
@@ -24,11 +24,11 @@ export const health = [
 ];
 export const levels = ['Good','Fair','Poor'];
 export const languages = [['language','Language'], ['speak','Speak',levels], ['read','Read',levels], ['write','Write',levels]];
-export const qualifications = [['institution','Institution'], ['certificate','Qualification'], ['subjects','All subjects (comma-separated)'], ['majors','Major subjects (comma-separated)'], ['obtained','Month and year obtained']];
+export const qualifications = [['institution','Institution'], ['certificate','Qualification','textarea'], ['subjects','All subjects (comma-separated)','textarea'], ['majors','Major subjects (comma-separated)'], ['obtained','Month and year obtained']];
 export const experience = [['employer','Employer'], ['post','Post held'], ['from','From','date'], ['to','To','date'], ['reason','Reason for change']];
 export const otherQualifications = [['study','Field of further study'], ['apprenticeship','Years of apprenticeship','number'], ['agreement','Agreement number'], ['training','Apprenticeship institution'], ['statutory','Statutory registration date and particulars']];
 export const sections = [['personal','Personal details'],['employment','Current employment'],['qualifications','Qualifications and languages'],['experience','Work experience'],['health','Health questionnaire'],['review','Declarations and confirmation']];
-export const blankProfile = () => ({employmentType:'', school:{}, tertiary:[], experience:[], languages:[{language:'English'}], confirmed:false});
+export const blankProfile = () => ({employmentType:'', school:{}, tertiary:[], experience:[], languages:[{language:'English'}], reviewedSections:[], confirmed:false});
 function missingFields(profile, keys) {
   return keys.some(key => !String(profile[key] ?? '').trim());
 }
@@ -38,12 +38,14 @@ export function problems(p) {
   if(p.tertiary.length>3)warnings.push('The official template has space for three tertiary qualifications. Keep the three most relevant entries.');
   if(p.languages.length>6||!p.languages.length)warnings.push('Enter one to six languages.');
   if (missingFields(p,['surname','names','birth','citizenship','gender','marital','postal','residential','mobile','email','alternate','alternatePhone','available']) || !(p.identity || p.passport)) warnings.push('Complete your identity, contact and availability details.');
+  const identity=String(p.identity??'').replace(/[\s-]/g,'');
+  if(identity&&!/^\d{1,14}$/.test(identity)) warnings.push('Enter up to 14 digits in the Namibian identity number field.');
   if (!p.employmentType || (p.employmentType === 'Yes' && missingFields(p,employment.map(([key])=>key)))) warnings.push('Complete your current Public Service employment details.');
   if (p.languages.some(row => missingFields(row,['language','speak','read','write']))) warnings.push('Select speaking, reading and writing levels for each language.');
   const credentials = [p.school,...p.tertiary].filter(row => Object.values(row).some(Boolean));
   if (credentials.some(row => missingFields(row,['institution','certificate','subjects','obtained']) || /see (?:the )?(?:attach|cv)/i.test(row.subjects))) warnings.push('Enter the institution, qualification, actual subjects and award date for each qualification.');
   if(credentials.some(row=>row.majors&&row.majors.split(',').map(s=>s.trim()).filter(Boolean).some(m=>!String(row.subjects||'').toLowerCase().includes(m.toLowerCase()))))warnings.push('Major subjects must be included in your subjects list.');
-  if (p.experience.some(row => missingFields(row,['employer','post','from','reason']))) warnings.push('Complete each employment history entry or remove its empty row.');
+  if (p.experience.some(row => missingFields(row,['employer','post','from']) || (!row.current && row.to && missingFields(row,['reason'])))) warnings.push('Complete each role’s employer, post and start date. Enter a reason for change for roles with an end date.');
   if (!(Number(p.height)>0) || !(Number(p.mass)>0) || [...health,...disclosures].some(([key]) => !p[key] || (p[key]==='Yes' && !String(p[key+'Details'] ?? '').trim()))) warnings.push('Answer the health and declaration questions and explain every Yes answer.');
   return warnings;
 }

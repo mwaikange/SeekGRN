@@ -135,6 +135,29 @@ nav{display:flex;align-items:center;justify-content:center;gap:5px}
 .empty h2,.empty h3{color:var(--ink);margin-bottom:5px}
 .empty p{margin-bottom:9px}
 .notice{padding:9px 13px;border-radius:7px;background:#e4efdb;color:#214a34;font-size:14px;margin-block:16px}
+.notice[data-kind="error"]{background:#fff0ed;color:#962c22;border:1px solid #e7a39a}
+.notice[data-kind="info"]{background:#edf2fa;color:#284773}
+.job-action{display:grid;justify-items:start;gap:4px}
+.button.job-stage.prepare{background:#e8f0fd;color:#173e78;border-color:#b8cbee}
+.button.job-stage.prepare:hover:not(:disabled){background:#d7e5fb}
+.button.job-stage.loading{background:#fff2d2;color:#654300;border-color:#dfc27a}
+.button.job-stage.filling{background:#f0e8fa;color:#56327b;border-color:#d1bce7}
+.button.job-stage.saving{background:#e0f2f4;color:#14575e;border-color:#a5d5d9}
+.button.job-stage.ready{background:#dfeeda;color:#204b2b;border-color:#b5d0ad}
+.button.job-stage.ready:hover{background:#ccdfc6}
+.button.job-stage.closed{background:#edf0ed;color:#4d5a52;border-color:#cfd5ce;opacity:1}
+.job-spinner{height:13px;width:13px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:job-spin .8s linear infinite}
+@keyframes job-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.job-spinner{animation:none}}
+.job-action .regenerate{font-size:.8rem;min-height:28px;padding:3px 8px}
+.review-progress{margin-bottom:20px;padding:12px 14px;background:#f0f5eb;border:1px solid #dce7d3;border-radius:9px}
+.review-progress-label{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 10px;font-size:13px}
+.review-progress progress{display:block;width:100%;height:10px;margin:8px 0;accent-color:#2d6844}
+.review-progress p{margin:0;color:var(--muted);font-size:13px}
+.review-errors{background:#fff0ed;color:#962c22;border:1px solid #e7a39a;border-radius:7px;padding:10px 12px 10px 30px}
+.form-footer>div{display:flex;flex-wrap:wrap;gap:8px}
+.current-role{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:14px}
+.current-role input{width:16px;height:16px;accent-color:#2d6844}
 .footer{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:38px;padding:18px 0 23px;border-top:1px solid var(--line);font-size:12px;color:#51675b}
 .footer p{margin:0}
 .footer-brand{font-weight:700;color:var(--green)}

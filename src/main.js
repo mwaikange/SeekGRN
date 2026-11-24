@@ -33,9 +33,11 @@ const nav = [['browse','grid','Browse'],['profile','user','Profile'],['documents
 const state = {
   view: 'browse', section: 'personal', profile: {...blank,...await get('profile')},
   documents: await get('documents') ?? [], circular: await get('circular'),
-  admin: isAdmin, query: '', org: '', station: '', selected: '', notice: '', jobStatus: '', pending: null
+  admin: isAdmin, query: '', org: '', station: '', selected: '', notice: '', noticeKind: '', jobStatus: '', pending: null
 };
 let cachedPdf, cachedPdfUrl, closeViewer, closeSubscription;
+let savingProfile=false, profileRevision=0;
+const jobStages={loading:'Loading…',filling:'Filling forms…',saving:'Saving forms…'};
 const intentKey='seekgrn-action';
 function requireAccount(intent) {
   if(user&&!registrationPending()) return true;
@@ -64,7 +66,29 @@ const action = (label, name, symbol, classes='button secondary', props='') =>
 const navLink = ([id,symbol,label]) => '<a href="#'+id+'" class="nav-link '+(state.view===id?'active':'')+'" '+(state.view===id?'aria-current="page"':'')+'>'+icon(symbol)+'<span>'+escape(label)+'</span></a>';
 const prepared = id => state.documents.find(bundle=>bundle.jobId===id);
 const confirmed = () => state.profile.confirmed && !fields.problems(state.profile).length;
-const status = message => {state.notice=message; const el=root.querySelector('#notice'); if(el){el.textContent=message;el.hidden=!message;}};
+function status(message,kind='info') {
+  state.notice=message;state.noticeKind=kind;
+  const el=root.querySelector('#notice');
+  if(el){el.dataset.kind=kind;el.textContent=message;el.hidden=!message;}
+}
+const reviewedSections = () => confirmed()?fields.sections.map(([id])=>id):state.profile.reviewedSections??[];
+const unreviewedSection = () => fields.sections.find(([id])=>id!=='review'&&!reviewedSections().includes(id));
+const firstReviewSection = () => unreviewedSection()?.[0]??(confirmed()?'personal':'review');
+state.section=firstReviewSection();
+function markProfileEdited(section) {
+  const wasConfirmed=state.profile.confirmed;
+  state.profile.reviewedSections=wasConfirmed?[]:reviewedSections().filter(id=>id!==section);
+  state.profile.confirmed=false;
+  profileRevision++;
+  const progress=root.querySelector('.review-progress');
+  if(progress)progress.innerHTML=reviewProgress();
+  if(wasConfirmed){
+    const badge=root.querySelector('.profile-state');
+    if(badge)badge.innerHTML=icon('user')+'Profile draft';
+    const button=root.querySelector('[data-action="confirm"]');
+    if(button){button.innerHTML=icon('check')+'Confirm profile';button.disabled=savingProfile;}
+  }
+}
 function retireCircular() {
   if (!retired(state.circular) || state.circular.archived) return;
   state.circular = {...state.circular,jobs:[],pdf:null,archived:true};
@@ -77,7 +101,7 @@ function shell(content) {
     '<a class="brand" href="#browse"><span class="brand-icon">'+icon('briefcase',23)+'</span><span>Seek<span class="brand-grn">GRN</span>Jobs<small>NAMIBIA PUBLIC SERVICE VACANCIES</small></span></a>'+
     (user&&!registrationPending()?'<nav class="app-nav" aria-label="Main navigation">'+nav.map(navLink).join('')+(state.admin?navLink(['admin','shield','Admin']):navLink(['subscription','subscription','Subscription']))+'</nav>':'')+
     action(user?'My account':'Sign in','account','user','button quiet mast-action')+'</div></header>'+
-    '<main id="main">'+content+'<p id="notice" role="status" class="notice wrap" '+(state.notice?'':'hidden')+'>'+escape(state.notice)+'</p></main>'+
+    '<main id="main">'+content+'<p id="notice" role="status" class="notice wrap" data-kind="'+escape(state.noticeKind)+'" '+(state.notice?'':'hidden')+'>'+escape(state.notice)+'</p></main>'+
     '<footer class="wrap footer"><div><a class="footer-brand" href="#browse">SeekGRNJobs</a><p>Independent application preparation tool for Namibia’s Public Service.</p><div class="footer-details"><nav class="footer-legal" aria-label="Legal"><a href="#terms">Terms of Service</a><span aria-hidden="true">|</span><a href="#privacy">Privacy Policy</a><span aria-hidden="true">|</span><a href="/request-account-removal">Account Removal</a></nav><p><a href="mailto:support@paysme.site">support@paysme.site</a> · <a href="tel:+264836795150">+264 83 679 5150</a></p><p class="footer-owner">Owned &amp; Managed by Mwai PaySME Solutions cc</p></div></div></footer>';
 }
 function sectionHeading(label, title, subtitle) {
@@ -111,21 +135,30 @@ function renderJobs() {
   list.innerHTML=jobs.length?jobs.map(j=>{
     const done=prepared(j.id);
     const expanded=state.selected===j.id;
+    const stage=state.pending===j.id?state.jobStatus:done?'ready':expired(c)?'closed':'prepare';
+    const props='data-id="'+escape(j.id)+'"';
+    const preparation=jobStages[stage]
+      ? '<span class="button job-stage '+stage+'" role="status"><span class="job-spinner" aria-hidden="true"></span>'+jobStages[stage]+'</span>'
+      : stage==='ready'
+        ? action('View forms','view-bundle','file','button job-stage ready',props)+
+          (expired(c)?'':action('Regenerate','prepare',null,'button quiet regenerate',props+(state.pending?' disabled':'')))
+        : action(stage==='closed'?'Closed':'Prepare forms','prepare','arrow','button job-stage '+stage,props+(stage==='closed'||state.pending?' disabled':''));
     const record=expanded?['requirements','duties','contact','delivery','details'].filter(k=>j[k]).map(k=>'<div><h3>'+({requirements:'Requirements',duties:'Responsibilities',contact:'Enquiries',delivery:'Where to submit',details:'Circular listing'})[k]+'</h3><p>'+escape(j[k])+'</p></div>').join(''):'';
     return '<article class="job"><div class="job-main"><span class="job-icon">'+icon('building',23)+'</span><div class="job-copy"><div class="job-tags"><span class="tag">'+escape(j.grade?'Grade '+j.grade:'Public service')+'</span>'+ (j.reference?'<span class="tag muted">'+escape(j.reference)+'</span>':'')+'</div>'+
       '<h3><button type="button" class="title-link" aria-expanded="'+expanded+'" data-action="details" data-id="'+escape(j.id)+'">'+escape(j.title)+'</button></h3><p class="job-org">'+escape(j.org)+'</p>'+
       '<p class="job-meta">'+(j.station?'<span>'+icon('pin',15)+escape(j.station)+'</span>':'')+'<span>'+icon('clock',15)+(expired(c)?'Closed ':'Closes ')+displayDate(c.closes)+'</span></p></div>'+
-      '<div class="job-action">'+(done?action('View forms','view-bundle','file','button secondary','data-id="'+escape(j.id)+'"'):action(state.pending===j.id?state.jobStatus:expired(c)?'Closed':'Prepare forms','prepare','arrow','button secondary','data-id="'+escape(j.id)+'" '+(expired(c)||state.pending?'disabled':'')))+'</div></div>'+
+      '<div class="job-action">'+preparation+'</div></div>'+
       (expanded?'<div class="job-detail"><div class="job-extra"><span>'+escape(j.unit)+'</span><strong>'+escape(j.salary)+'</strong></div>'+record+(j.page&&circularLink(c)?'<p class="source"><a href="#circular" data-circular-page="'+Number(j.page)+'">Check the official circular from page '+escape(j.page)+'</a></p>':'')+'</div>':'')+'</article>';
   }).join(''):'<div class="empty">'+icon('search',28)+'<h3>'+ (c.archived?'No current circular':'No matching vacancies')+'</h3><p>'+(c.archived?'New vacancies will appear when the next circular is published.':'Try a different search or clear the ministry and duty station filters.')+'</p></div>';
 }
-function input(section,key,label,type,value) {
+function input(section,key,label,type,value,disabled=false) {
   const attrs=' data-field="'+escape(key)+'" data-section="'+escape(section)+'"';
   let control;
   const choices=type===true?['Yes','No']:type;
   if (Array.isArray(choices)) control='<select'+attrs+'><option value="">Select</option>'+choices.map(x=>'<option '+(value===x?'selected':'')+'>'+escape(x)+'</option>').join('')+'</select>';
   else if (type==='textarea') control='<textarea'+attrs+'>'+escape(value)+'</textarea>';
-  else control='<input'+attrs+' type="'+(type??'text')+'" value="'+escape(value)+'">';
+  else if (type==='checkbox') return '<label class="current-role"><input'+attrs+' type="checkbox" '+(value?'checked':'')+'> '+escape(label)+'</label>';
+  else control='<input'+attrs+' type="'+(type??'text')+'" value="'+escape(value)+'" '+(disabled?'disabled':'')+'>';
   return '<label class="field"><span>'+escape(label)+'</span>'+control+'</label>';
 }
 const grid = content => '<div class="field-grid">'+content+'</div>';
@@ -138,7 +171,10 @@ function question([key,label]) {
 function repeaters(kind, rows, label, limit, keepFirst=false) {
   const p=state.profile;
   return p[kind].map((row,i)=>'<section class="repeater"><div class="repeat-head"><h3>'+label+' '+(i+1)+'</h3>'+
-    (!keepFirst||i?action('Remove','remove-row','close','button quiet','data-kind="'+kind+'" data-index="'+i+'"'):'')+'</div>'+fieldGrid(rows,row,kind+'.'+i)+'</section>').join('')+
+    (!keepFirst||i?action('Remove','remove-row','close','button quiet','data-kind="'+kind+'" data-index="'+i+'"'):'')+'</div>'+
+    (kind==='experience'?input(kind+'.'+i,'current','I currently work in this role','checkbox',row.current)+
+      grid(rows.map(([key,label,type])=>input(kind+'.'+i,key,label,type,key==='to'&&row.current?'':row[key],key==='to'&&row.current)).join('')):
+      fieldGrid(rows,row,kind+'.'+i))+'</section>').join('')+
     (p[kind].length<limit?action('Add '+label.toLowerCase(),'add-row',null,'button secondary','data-kind="'+kind+'"'):'');
 }
 function profileContent() {
@@ -147,24 +183,37 @@ function profileContent() {
     case 'employment': return fieldGrid([['employmentType','Are you currently employed in the Public Service?',true]])+(p.employmentType==='Yes'?fieldGrid(fields.employment):'');
     case 'qualifications': return '<h3>Highest school qualification</h3>'+fieldGrid(fields.qualifications,p.school,'school')+'<h3>Universities, colleges and other institutions</h3>'+repeaters('tertiary',fields.qualifications,'Qualification',3)+
       '<h3>Further study and registration</h3>'+fieldGrid(fields.otherQualifications)+'<h3>Language proficiency</h3>'+repeaters('languages',fields.languages,'Language',6,true);
-    case 'experience': return '<p class="subtle">Enter the most relevant roles. The template provides four labelled rows and space for a fifth entry.</p>'+repeaters('experience',fields.experience,'Role',5);
+    case 'experience': return '<p class="subtle">For a current role, tick the checkbox or leave the end date blank.</p>'+repeaters('experience',fields.experience,'Role',5);
     case 'health': return '<p class="subtle">Answer each question. For a Yes answer, describe the condition, severity, date and duration as applicable.</p>'+fieldGrid([['height','Height (cm)','number'],['mass','Body mass (kg)','number']])+fields.health.map(question).join('');
     case 'review': {
       const warnings=fields.problems(p);
       return fields.disclosures.map(question).join('')+'<div class="confirm-box"><h3>Confirm your profile</h3><p>Review the details you entered. Sign the printed application and health declaration before submitting them.</p>'+
-        (warnings.length?'<ul>'+warnings.map(w=>'<li>'+escape(w)+'</li>').join('')+'</ul>':'')+
-        action(p.confirmed?'Profile confirmed':'Confirm profile','confirm','check','button primary',p.confirmed?'disabled':'')+'</div>';
+        (warnings.length?'<ul class="review-errors">'+warnings.map(w=>'<li>'+escape(w)+'</li>').join('')+'</ul>':'')+'</div>';
     }
     default: return fieldGrid(fields.personal);
   }
+}
+function reviewProgress() {
+  const total=fields.sections.length;
+  const step=fields.sections.findIndex(([id])=>id===state.section)+1;
+  const complete=reviewedSections().length;
+  const remaining=unreviewedSection();
+  const instruction=confirmed()?'Profile confirmed':remaining
+    ? (remaining[0]===state.section?'Save this section to continue':'Still to review · '+remaining[1])
+    : 'Confirm your profile to finish';
+  return '<div class="review-progress-label" id="review-progress-label"><strong>Step '+step+' of '+total+'</strong><span>'+complete+' of '+total+' sections reviewed</span></div>'+
+    '<progress aria-labelledby="review-progress-label" max="'+total+'" value="'+complete+'"></progress><p>'+escape(instruction)+'</p>';
 }
 function profile() {
   if(!user||registrationPending())return signInPrompt();
   return '<section class="wrap">'+sectionHeading('APPLICANT PROFILE','My profile','Enter and confirm your details once. We reuse them to fill in future application forms.')+
     '<div class="page-grid"><aside class="panel side-steps"><div class="profile-state">'+icon(confirmed()?'check':'user')+(confirmed()?'Confirmed profile':'Profile draft')+'</div>'+
     fields.sections.map(([id,label])=>action(label,'profile-section',null,state.section===id?'step active':'step','data-id="'+id+'"')).join('')+
-    action('Clear profile and documents','clear','close','button quiet clear')+'</aside><div class="panel form-panel"><h2>'+fields.sections.find(([id])=>id===state.section)[1]+'</h2>'+profileContent()+
-    '<div class="form-footer"><span>'+icon('shield',16)+' Saved to your account</span>'+action('Save and continue','save','arrow','button primary')+'</div></div></div></section>';
+    action('Clear profile and documents','clear','close','button quiet clear')+'</aside><div class="panel form-panel"><div class="review-progress">'+reviewProgress()+'</div><h2>'+fields.sections.find(([id])=>id===state.section)[1]+'</h2>'+profileContent()+
+    '<div class="form-footer"><span>'+icon('shield',16)+' Saved to your account</span><div>'+
+    (state.section==='review'?action('Save draft','save',null,'button secondary',savingProfile?'disabled':'')+
+      action(confirmed()?'Profile confirmed':'Confirm profile','confirm','check','button primary',confirmed()||savingProfile?'disabled':''):
+      action('Save and continue','save','arrow','button primary',savingProfile?'disabled':''))+'</div></div></div></div></section>';
 }
 function documents() {
   if(!user||registrationPending())return signInPrompt();
@@ -192,13 +241,14 @@ async function reloadAccount() {
   sessionStorage.removeItem('seekgrn-registration');
   sessionStorage.removeItem(returnInvoiceKey);
   document.querySelector('.auth-sheet')?.close();
-  state.view='browse';state.profile=fields.blankProfile();state.documents=[];
-  state.admin=false;state.notice='';state.circularDraft=undefined;state.pending=null;state.subscription=null;
+   state.view='browse';state.profile=fields.blankProfile();state.documents=[];state.section='personal';profileRevision++;
+   state.admin=false;status('');state.circularDraft=undefined;state.pending=null;state.subscription=null;
   history.replaceState(null,'','/#browse');render();window.scrollTo(0,0);return;
  }
  state.profile={...fields.blankProfile(),...await get('profile')};
+ state.section=firstReviewSection();profileRevision++;
  state.documents=await get('documents')??[];
- state.admin=isAdmin;state.notice='';
+ state.admin=isAdmin;status('');
  if((state.view==='admin'&&!isAdmin)||(state.view==='subscription'&&isAdmin))state.view='browse';
  state.subscription=null;
  render();
@@ -244,8 +294,8 @@ function go(target) {
 }
 async function download(blob, name) {
   if(inMobileApp){
-    try {if(await exportMobileFile('save',blob,name))status('Saved '+name+'.');}
-    catch(error){status(error.message);}
+    try {if(await exportMobileFile('save',blob,name))status('Saved '+name+'.','success');}
+    catch(error){status(error.message,'error');}
     return;
   }
   const href=URL.createObjectURL(blob);
@@ -253,14 +303,41 @@ async function download(blob, name) {
   link.href=href; link.download=name; link.click();
   setTimeout(()=>URL.revokeObjectURL(href),60000);
 }
-function saveProfile() {
-  return put('profile',state.profile);
+async function saveProfile(confirm=false) {
+  if(savingProfile)return;
+  const revision=profileRevision;
+  const section=state.section;
+  const draft=structuredClone(state.profile);
+  const reviewed=reviewedSections();
+  draft.reviewedSections=confirm?fields.sections.map(([id])=>id):
+    section==='review'?reviewed:[...new Set([...reviewed,section])];
+  if(confirm)draft.confirmed=true;
+  savingProfile=true;
+  root.querySelectorAll('.form-footer button').forEach(button=>{button.disabled=true;});
+  try {
+    await put('profile',draft);
+    if(profileRevision!==revision)return;
+    state.profile=draft;
+    if(confirm){
+      status('Profile confirmed. You can now prepare forms.','success');go('browse');
+    }else{
+      if(section!=='review'&&state.section===section){
+        const next=fields.sections[fields.sections.findIndex(([id])=>id===section)+1][0];
+        state.section=draft.confirmed?next:unreviewedSection()?.[0]??'review';
+      }
+      status('Profile draft saved.','success');window.scrollTo(0,0);
+    }
+  } finally {
+    savingProfile=false;
+    if(state.view==='profile')render();
+  }
 }
 async function prepare(jobId) {
   if(!requireAccount({type:'prepare',id:jobId}))return;
   if (expired(state.circular)||state.pending) return;
   if (!confirmed()) {
-    state.notice='Complete and confirm your profile before preparing forms.';
+    status('Complete and confirm your profile before preparing forms.','error');
+    state.section=unreviewedSection()?.[0]??'review';
     go('profile');
     return;
   }
@@ -269,24 +346,38 @@ async function prepare(jobId) {
   const profile=structuredClone(state.profile);
   const job=circular.jobs.find(j=>j.id===jobId);
   if (!job) return;
-  state.pending=jobId; state.jobStatus='Loading…'; renderJobs();
+  state.pending=jobId; state.jobStatus='loading'; status('');renderJobs();
   try {
     if(!state.admin&&!prepared(jobId)){
       state.subscription=await subscriptionStatus();
       if(user?.id!==applicantId)return;
-      if(!preparationAvailable(state.subscription)){state.notice=playStoreApp?'Your preparation allowance is used.':'Your preparation allowance is used. Choose a subscription to prepare more forms.';go('subscription');return;}
+      if(!preparationAvailable(state.subscription)){status(playStoreApp?'Your preparation allowance is used.':'Your preparation allowance is used. Choose a subscription to prepare more forms.','error');go('subscription');return;}
     }
     const {prepareForms}=await import('./pdf.js');
-    state.jobStatus='Filling forms…'; renderJobs();
-    const bundle=await prepareForms(profile,job,circular);
+    state.jobStatus='filling'; renderJobs();
+    let hierarchy;
+    if(job.page&&job.division===undefined&&job.subdivision===undefined){
+      const source=circularLink(circular);
+      if(source){
+        try{
+          const {readVacancyHierarchy}=await import('./extract.js');
+          hierarchy=await readVacancyHierarchy(source,job);
+        }catch{
+          // Older published vacancies may still have usable unit details.
+        }
+      }
+    }
+    if(user?.id!==applicantId)return;
+    const bundle=await prepareForms(profile,{...job,...hierarchy},circular);
     if(user?.id!==applicantId) return;
     if (expired(circular)) throw new Error('This vacancy has closed.');
+    state.jobStatus='saving';renderJobs();
     const saved=await savePreparedPack(bundle);
     const documents=saved.documents;state.subscription=saved.subscription;
     if(user?.id!==applicantId) return;
     state.documents=documents;
-    status('Application and health forms completed.');
-  } catch (error) { status(error.message); }
+    status('Application and health forms completed.','success');
+  } catch (error) { if(user?.id===applicantId)status(error.message,'error'); }
   finally { state.pending=null; renderJobs(); }
 }
 async function documentAction(name,bundle,index) {
@@ -324,7 +415,7 @@ async function documentAction(name,bundle,index) {
   if (name==='share') {
     if(inMobileApp){
       try {if(!await exportMobileFile('share',file.blob,file.name))return;}
-      catch(error){status(error.message);return;}
+      catch(error){status(error.message,'error');return;}
       if(user?.id===applicantId&&!file.shared&&window.confirm('Mark this document as shared?')){
         file.shared=true;
         await put('documents',state.documents);render();
@@ -334,7 +425,7 @@ async function documentAction(name,bundle,index) {
     const attachment=new File([file.blob],file.name,{type:'application/pdf'});
     if (navigator.canShare?.({files:[attachment]})) {
       try { await navigator.share({files:[attachment],title:file.label}); file.shared=true; }
-      catch(error) { if(error.name!=='AbortError') status(error.message); return; }
+      catch(error) { if(error.name!=='AbortError') status(error.message,'error'); return; }
     } else {
       const dialog=document.createElement('dialog');
       dialog.className='panel share-dialog';
@@ -354,29 +445,36 @@ root.addEventListener('input',event=>{
   if (!section) return;
   const [key,index]=section.split('.');
   const target=key==='draft'?state.circularDraft:key==='profile'?state.profile:index===undefined?state.profile[key]:state.profile[key][index];
-  target[field]=el.value;
-  if (key!=='draft') state.profile.confirmed=false;
+  const value=el.type==='checkbox'?el.checked:el.value;
+  if(target[field]===value)return;
+  target[field]=value;
+  if(key!=='draft')markProfileEdited(state.section);
 });
 root.addEventListener('change',event=>{
   const el=event.target;
   if(el.dataset.upload==='circular'&&el.files?.[0])void uploadCircular(el.files[0]);
+  if(el.dataset.field==='current'&&el.type==='checkbox'){
+    const endDate=el.closest('.repeater').querySelector('[data-field="to"]');
+    const row=state.profile.experience[Number(el.dataset.section.split('.')[1])];
+    endDate.disabled=el.checked;endDate.value=el.checked?'':row.to??'';
+  }
   if (el.dataset.field && el.tagName==='SELECT' && (el.dataset.field==='employmentType'||[...fields.health,...fields.disclosures].some(([key])=>key===el.dataset.field))) render();
 });
 async function uploadCircular(file) {
-  if(!isAdmin){status('Super-admin access is required.');return;}
+  if(!isAdmin){status('Super-admin access is required.','error');return;}
   status('Reading PDF.');
   try {
     const {importCircular}=await import('./extract.js');
     state.circularDraft=await importCircular(file);
     state.circularDraft.jobsText=JSON.stringify(state.circularDraft.jobs,null,2);
-    state.notice='Check the extracted vacancies against the circular.';
+    status('Check the extracted vacancies against the circular.');
     render();
-  } catch(error) { status(error.message); }
+  } catch(error) { status(error.message,'error'); }
 }
 root.addEventListener('submit',async event=>{
   if(event.target.id!=='publish-form') return;
   event.preventDefault();
-  if(!isAdmin){status('Super-admin access is required.');return;}
+  if(!isAdmin){status('Super-admin access is required.','error');return;}
   const publishButton=event.target.querySelector('button[type="submit"],button');
   if(publishButton.disabled)return;
   publishButton.disabled=true;
@@ -388,19 +486,19 @@ root.addEventListener('submit',async event=>{
     if(expired(next)) throw new Error('Enter a closing date in the future.');
     await put('circular',next);
     state.circular=next;state.circularDraft=null;state.org='';state.station='';state.query='';state.selected='';
-    retireCircular(); state.notice='The circular was published.'; go('browse');
-  } catch (error) {status(error.message);}
+    retireCircular(); status('The circular was published.','success'); go('browse');
+  } catch (error) {status(error.message,'error');}
   finally {publishButton.disabled=false;}
 });
 root.addEventListener('click',async event=>{
   const mobilePicker=event.target.closest('[data-mobile-upload="circular"]');
   if(mobilePicker){
-    if(!isAdmin){status('Super-admin access is required.');return;}
+    if(!isAdmin){status('Super-admin access is required.','error');return;}
     const applicantId=user?.id;
     try {
       const file=await pickMobileCircular();
       if(file&&user?.id===applicantId&&mobilePicker.isConnected)await uploadCircular(file);
-    }catch(error){status(error.message);}
+    }catch(error){status(error.message,'error');}
     return;
   }
   const circularSource=event.target.closest('a[data-circular-page]');
@@ -414,22 +512,25 @@ root.addEventListener('click',async event=>{
     if(name==='view-bundle'){go('documents');setTimeout(()=>document.getElementById('bundle-'+id)?.scrollIntoView(),50);return;}
     if(name==='profile-section'){state.section=id;render();return;}
     if(name==='account'){openAccount(reloadAccount,user&&registrationPending()?'contacts':'login',resumeAction);return;}
-    if(name==='add-row'){state.profile[kind].push({});state.profile.confirmed=false;render();return;}
-    if(name==='remove-row'){state.profile[kind].splice(Number(index),1);state.profile.confirmed=false;render();return;}
-    if(name==='save'){
-      await saveProfile();
-      const current=fields.sections.findIndex(([key])=>key===state.section);
-      if(current<fields.sections.length-1) state.section=fields.sections[current+1][0];
-      state.notice='Profile draft saved.';render();window.scrollTo(0,0);return;
-    }
+    if(name==='add-row'){state.profile[kind].push({});markProfileEdited(state.section);render();return;}
+    if(name==='remove-row'){state.profile[kind].splice(Number(index),1);markProfileEdited(state.section);render();return;}
+    if(name==='save')return await saveProfile();
     if(name==='confirm'){
+      const remaining=unreviewedSection();
+      if(remaining){
+        await saveProfile();
+        state.section=remaining[0];
+        status('Review every section before confirming your profile.','error');
+        render();window.scrollTo(0,0);return;
+      }
       const problems=fields.problems(state.profile);
-      if(problems.length){status(problems[0]);return;}
-      state.profile.confirmed=true;await saveProfile();state.notice='Profile confirmed. You can now prepare forms.';go('browse');return;
+      if(problems.length){status(problems[0],'error');return;}
+      return await saveProfile(true);
     }
     if(name==='clear'){
       if(!window.confirm('Clear the profile and all prepared documents from your account?'))return;
-      await Promise.all([remove('profile'),remove('documents')]);state.profile=fields.blankProfile();state.documents=[];state.section='personal';state.notice='Profile and documents cleared.';render();return;
+      if(savingProfile)return;
+      await Promise.all([remove('profile'),remove('documents')]);state.profile=fields.blankProfile();state.documents=[];state.section='personal';profileRevision++;status('Profile and documents cleared.','success');render();return;
     }
     if(name==='export-feed'){
       const {pdf,archived,...catalog}=state.circular;
@@ -443,7 +544,7 @@ root.addEventListener('click',async event=>{
       const documents=state.documents.filter(item=>item!==bundle);await put('documents',documents);state.documents=documents;render();return;
     }
     await documentAction(name,bundle,Number(index));
-  } catch(error){status(error.message);}
+  } catch(error){status(error.message,'error');}
 });
 window.addEventListener('hashchange',navigate);
 let previouslyExpired=expired(state.circular);
@@ -463,7 +564,7 @@ supabase.auth.onAuthStateChange(event=>{
     try {
       await refreshAccount();
       if(!user) await reloadAccount();
-    } catch(error) { status(error.message); }
+    } catch(error) { status(error.message,'error'); }
   },0);
 });
 

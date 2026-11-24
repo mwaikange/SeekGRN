@@ -4,11 +4,39 @@ import { readProfileSlots } from './form-layout.js';
 
 GlobalWorkerOptions.workerSrc=workerUrl;
 
+import {parseCircular,pageLines} from './circular-parser.js';
+
+export async function readVacancyHierarchy(url, job) {
+  const task=getDocument({url,disableAutoFetch:true,disableStream:true,isEvalSupported:false});
+  try {
+    const pdf=await task.promise;
+    const pageNumber=Number(job.page);
+    if(!Number.isInteger(pageNumber)||pageNumber<1||pageNumber>pdf.numPages)return;
+    const pages=[];
+    const first=Math.max(1,pageNumber-2);
+    for(let index=first;index<=Math.min(pdf.numPages,pageNumber+1);index++){
+      const page=await pdf.getPage(index);
+      pages.push(pageLines((await page.getTextContent()).items));
+      page.cleanup();
+    }
+    const same=(a,b)=>String(a??'').trim().toLowerCase()===String(b??'').trim().toLowerCase();
+    const matches=parseCircular(pages).jobs.filter(candidate=>
+      candidate.page===pageNumber-first+1 &&
+      same(candidate.title,job.title) && same(candidate.station,job.station) &&
+      (!candidate.org||same(candidate.org,job.org)) &&
+      (!job.unit||same(candidate.unit,job.unit))
+    );
+    if(matches.length===1){
+      const {division,subdivision}=matches[0];
+      return {division,subdivision};
+    }
+  } finally {await task.destroy();}
+}
+
 async function openPdf(file) {
   if (file.size > 30 * 1024 * 1024) throw new Error('Choose a PDF smaller than 30 MB.');
   return getDocument({data:new Uint8Array(await file.arrayBuffer()),isEvalSupported:false}).promise;
 }
-import {parseCircular,pageLines} from './circular-parser.js';
 export async function importCircular(file) {
   const pdf=await openPdf(file);
   try {

@@ -37,6 +37,18 @@ test('reads the supplied 108-page circular and its individual duty stations', as
   assert.ok(result.jobs.some(job => job.station.includes('Ohakafiya Combined School')));
 });
 
+test('keeps division and subdivision together and clears the subdivision when the division changes', () => {
+  const {jobs} = parseCircular([
+    'MINISTRY OF HEALTH AND SOCIAL SERVICES\nDivision: General Support Services\nSubdivision: Resources Management\nPost Designation: Chief Administrative Officer Grade 8\nDuty Station: Karasburg\nSalary: Example\nDivision: Human Resources\nPost Designation: Administrative Officer Grade 10\nDuty Station: Windhoek\nSalary: Example\nDivision: Finance / Sub-Division: Payroll\nPost Designation: Payroll Officer Grade 8\nDuty Station: Outjo'
+  ]);
+  assert.equal(jobs[0].division,'General Support Services');
+  assert.equal(jobs[0].subdivision,'Resources Management');
+  assert.equal(jobs[1].division,'Human Resources');
+  assert.equal(jobs[1].subdivision,'');
+  assert.equal(jobs[2].division,'Finance');
+  assert.equal(jobs[2].subdivision,'Payroll');
+});
+
 test('closes at midnight Namibia time and retires 48 hours later', () => {
   const circular = { closes: '2026-12-07' };
   const stop = cutoff(circular);
@@ -60,14 +72,20 @@ test('fills the official PDFs, retains both pages, and reads applicant fields ba
   const profile = {
     surname: 'EXAMPLE', names: 'TEST APPLICANT', identity: '90010101001', birth: '1990-01-01',
     citizenship: 'Namibian', gender: 'Female', marital: 'Single', mobile: '+264811234567',
-    email: 'applicant@example.invalid', postal: 'PO Box 10', residential: '44 Example Street',
+    email: 'applicant@example.invalid', postal: 'PO Box 10\nExample Town, Namibia', residential: '44 Example Street\nExample Town, Namibia',
     available: 'Immediately', employmentType: 'No', height: '172', mass: '63',
     languages: [{ language: 'English', speak: 'Good', read: 'Good', write: 'Good' }],
-    school: { institution: 'Example School', certificate: 'NSSCO', subjects: 'English, Mathematics', majors: 'Mathematics', obtained: 'Dec 2008' },
-    tertiary: [], experience: [], convicted: 'Yes', convictedDetails: 'Synthetic example for PDF testing.'
+    school: { institution: 'Example School', certificate: 'NSSCO', subjects: 'English, Afrikaans, Mathematics, Economics, Principles of Accounting, Business Studies, Physical Science, Geography, Computer Studies, History, Development Studies', majors: 'Principles of Accounting', obtained: 'Dec 2008' },
+    tertiary: [
+      {institution:'Example Polytechnic',certificate:'Diploma in Business Administration and Management',subjects:'Business Procedures, Economics Control, Social Sciences, Business Communication', obtained:'April 2012'},
+      {institution:'Example Polytechnic',certificate:'Certificate in Applied Business Processes',subjects:'Applied Business Economics, Practical Costing, Transport and Logistics',obtained:'April 2010'}
+    ],
+    experience: [{employer:'Example Office',post:'Officer',from:'2012-04-01',current:true,to:'2014-06-30'}],
+    convicted: 'Yes', convictedDetails: 'Synthetic example for PDF testing.'
   };
   const job = { id: 'test', title: 'Education Officer', org: 'Oshikoto Regional Council', grade: '8', reference: '1234',
-    station: 'Rev Selma Kawiiwa Primary School: Junior Primary Phase (Oshikwanyama Medium of Instruction), Eenhana Circuit' };
+    station: 'Rev Selma Kawiiwa Primary School: Junior Primary Phase (Oshikwanyama Medium of Instruction), Eenhana Circuit',
+    division: 'General Support Services', subdivision: 'Resources Management' };
   const circular = { title: 'PSM Circular No. I of 2026', advertised: '2026-11-06' };
   const generated = await prepareForms(profile, job, circular);
   assert.equal(generated.files.length, 3);
@@ -83,15 +101,38 @@ test('fills the official PDFs, retains both pages, and reads applicant fields ba
     if (type === 'application') assert.match(combined, /Ref\. 1234/);
     else assert.match(combined, /172/);
     const blank = await extractPages(template);
-    const values = readProfileSlots(pages.map((page, i) => ({
+    const filled = pages.map((page, i) => ({
       ...page,
       items: page.items.filter(item => !blank[i].items.some(reference =>
         reference.str === item.str && Math.abs(reference.transform[4] - item.transform[4]) < 1 &&
         Math.abs(reference.transform[5] - item.transform[5]) < 1))
-    })), type);
+    }));
+    const values = readProfileSlots(filled, type);
     assert.equal(values.surname, 'EXAMPLE');
     assert.equal(values.identity, '90010101001');
+    if(type==='application'){
+      assert.match(combined,/Division: General Support Services \/ Subdivision: Resources Management/);
+      assert.equal(filled[0].items.filter(i=>i.str==='N/A'&&i.transform[5]>=95&&i.transform[5]<=128).length,7);
+      const idDigits=filled[0].items.filter(i=>/^\d$/.test(i.str)&&i.transform[5]===404&&i.transform[4]<258);
+      assert.equal(idDigits.length,profile.identity.length);
+      const centers=[49.02,64.99,80.97,96.93,112.89,128.85,144.75,160.71,176.61,192.58,208.55];
+      assert.ok(idDigits.every((i,index)=>Math.abs(i.transform[4]+i.width/2-centers[index])<.05));
+      assert.equal(values.postal,profile.postal);
+      assert.equal(values.residential,profile.residential);
+      assert.equal(values.school.certificate,profile.school.certificate);
+      assert.equal(values.school.subjects,profile.school.subjects);
+      assert.deepEqual(values.tertiary,profile.tertiary);
+      assert.equal(values.experience[0].current,true);
+      assert.equal(values.experience[0].to,'');
+      assert.match(combined,/Present/);
+    }
   }
   const supplement = await extractPages(await generated.files[2].blob.arrayBuffer());
   assert.match(pageLines(supplement[0].items), /Synthetic example for PDF testing/);
+  const longSubjects = Array.from({length:30},(_,i)=>'Course '+(i+1)+' International Logistics and Procurement').join(', ') + ', Final Capstone Project';
+  const overflow = await prepareForms({...profile,school:{...profile.school,subjects:longSubjects}},job,circular);
+  const overflowForm=await extractPages(await overflow.files[0].blob.arrayBuffer());
+  const overflowSheet=await extractPages(await overflow.files[2].blob.arrayBuffer());
+  assert.match(pageLines(overflowForm[1].items),/See addendum/);
+  assert.match(pageLines(overflowSheet[0].items).replace(/\s+/g,' '),/Final Capstone Project/);
 });

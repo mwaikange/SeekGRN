@@ -25,22 +25,32 @@ export function parseCircular(pages) {
  const issue=intro.match(/PSM\s+CIRCULAR\s+NO\.?\s*([IVXLCDM]+|\d+)\s+OF\s+(\d{4})/i);
  const advertised=isoDate(intro.match(/advertised\s+on\s*:?\s*(\d{1,2}\s+[a-z]+\s+\d{4})/i)?.[1]||'');
  const closes=isoDate(intro.match(/closing\s+date\s*:?\s*(\d{1,2}\s+[a-z]+\s+\d{4})/i)?.[1]||'');
- const jobs=[];let org='',unit='',current=null;
+ const jobs=[];let org='',unit='',division='',subdivision='',current=null;
  const lines=pages.flatMap((page,i)=>cleanLines(page).map(text=>({text:tidy(text),page:i+1})));
  for(let i=0;i<lines.length;i++){
   const {text:line,page}=lines[i];const compact=line.replace(/\s/g,'').toUpperCase();
   if(line===line.toUpperCase()&&/^(OFFICE OF |MINISTRY OF |NATIONAL ASSEMBLY|NATIONAL COUNCIL)/.test(line)||/^[A-Z -]+REGIONALCOUNCIL$/.test(compact)){
-   org=fixCase(line);unit='';current=null;continue;
+   org=fixCase(line);unit='';division='';subdivision='';current=null;continue;
   }
-  const heading=line.split(':')[0].replace(/\s/g,'').toLowerCase();
-  if(['department','directorate','division','subdivision','section'].includes(heading)){
-   unit=line.slice(line.indexOf(':')+1).trim();continue;
+  const heading=line.split(':')[0].replace(/[\s-]/g,'').toLowerCase();
+  if(line.includes(':')&&['department','directorate','division','subdivision','section'].includes(heading)){
+   unit=line.slice(line.indexOf(':')+1).trim();
+   if(['department','directorate','division'].includes(heading)){
+    division=heading==='division'?unit:'';
+    subdivision='';
+    if(division){
+     const combined=division.match(/^(.*?)(?:\s*[:/|]\s*|\s+)sub[\s-]*division\s*:\s*(.+)$/i);
+     if(combined){division=combined[1].trim();subdivision=combined[2].trim();}
+    }
+   }
+   if(heading==='subdivision')subdivision=unit;
+   continue;
   }
   if(['postdesignation','posttitle','position'].includes(heading)&&line.includes(':')){
    let label=line.slice(line.indexOf(':')+1).trim();
    while((label.match(/\(/g)||[]).length>(label.match(/\)/g)||[]).length&&i+1<lines.length&&!/:|salary|minimum|^\d+\s*x/i.test(lines[i+1].text))label+=' '+lines[++i].text;
    const match=label.match(/^(.*?)\s+Grade\s+(\d+[A-Z]?)(.*)$/i);
-   current={id:'psm-'+(closes||'pending')+'-'+(jobs.length+1),title:fixCase(match?match[1]+match[3]:label),grade:match?.[2]||'',org,unit,station:'',page,details:''};
+   current={id:'psm-'+(closes||'pending')+'-'+(jobs.length+1),title:fixCase(match?match[1]+match[3]:label),grade:match?.[2]||'',org,unit,division,subdivision,station:'',page,details:''};
    jobs.push(current);continue;
   }
   if(!current)continue;
