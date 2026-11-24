@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { PDFDocument } from 'pdf-lib';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { pageLines, parseCircular } from '../src/circular-parser.js';
+import { pageLines, parseCircular, vacancyUnitLines, withBundledVacancyUnits } from '../src/circular-parser.js';
 import { cutoff, expired, retired } from '../src/circular.js';
 import { readProfileSlots } from '../src/form-layout.js';
 import { prepareForms } from '../src/pdf.js';
@@ -35,6 +35,15 @@ test('reads the supplied 108-page circular and its individual duty stations', as
   assert.ok(result.jobs.every(job => job.title && job.org && job.station && job.page >= 5));
   assert.equal(result.jobs[0].station, 'Windhoek');
   assert.ok(result.jobs.some(job => job.station.includes('Ohakafiya Combined School')));
+  const index=JSON.parse(await readFile('src/bundled-circular-headings.json','utf8'));
+  const legacy=result.jobs.map(({department,directorate,division,subdivision,section,...job})=>job);
+  const circular={...result,pdf:'/circular.pdf',jobs:legacy};
+  assert.deepEqual(withBundledVacancyUnits(circular,index).jobs.map(vacancyUnitLines),result.jobs.map(vacancyUnitLines));
+  const listing=legacy.find(job=>index.jobs[job.id]);
+  const edited={...listing,station:'Another location'};
+  assert.deepEqual(withBundledVacancyUnits({...circular,jobs:[edited]},index).jobs,[edited]);
+  const uploaded={...circular,pdf:new Blob()};
+  assert.equal(withBundledVacancyUnits(uploaded,index),uploaded);
 });
 
 test('keeps division and subdivision together and clears the subdivision when the division changes', () => {
@@ -47,6 +56,28 @@ test('keeps division and subdivision together and clears the subdivision when th
   assert.equal(jobs[1].subdivision,'');
   assert.equal(jobs[2].division,'Finance');
   assert.equal(jobs[2].subdivision,'Payroll');
+});
+
+test('stores the available workplace headings and formats legacy vacancy records', () => {
+  const {jobs}=parseCircular([[
+    'MINISTRY OF HEALTH AND SOCIAL SERVICES',
+    'Department: Operations',
+    'Directorate: General Services',
+    'Division: Finance / Sub-Division: Payroll',
+    'Section: Salaries',
+    'Post Designation: Administrative Officer Grade 8',
+    'Duty Station: Windhoek',
+    'Salary: Example',
+    'Directorate: Field Services',
+    'Post Designation: Regional Officer Grade 7',
+    'Duty Station: Outjo'
+  ].join('\n')]);
+  assert.deepEqual(vacancyUnitLines(jobs[0]),[
+    'Department: Operations','Directorate: General Services','Division: Finance','Subdivision: Payroll','Section: Salaries'
+  ]);
+  assert.deepEqual(vacancyUnitLines(jobs[1]),['Department: Operations','Directorate: Field Services']);
+  assert.deepEqual(vacancyUnitLines({unit:'Water Supply and Sanitation'}),['Unit: Water Supply and Sanitation']);
+  assert.deepEqual(vacancyUnitLines({details:'Duty Station: Outjo\nSection: Client Services'}),['Section: Client Services']);
 });
 
 test('closes at midnight Namibia time and retires 48 hours later', () => {
@@ -68,7 +99,10 @@ test('closes at midnight Namibia time and retires 48 hours later', () => {
 });
 
 test('fills the official PDFs, retains both pages, and reads applicant fields back', async t => {
-  t.mock.method(globalThis, 'fetch', async path => new Response(await readFile('public' + path)));
+  t.mock.method(globalThis, 'fetch', async path => {
+    assert.ok(['/application.pdf','/health.pdf'].includes(path));
+    return new Response(await readFile('public' + path));
+  });
   const profile = {
     surname: 'EXAMPLE', names: 'TEST APPLICANT', identity: '90010101001', birth: '1990-01-01',
     citizenship: 'Namibian', gender: 'Female', marital: 'Single', mobile: '+264811234567',
@@ -135,4 +169,9 @@ test('fills the official PDFs, retains both pages, and reads applicant fields ba
   const overflowSheet=await extractPages(await overflow.files[2].blob.arrayBuffer());
   assert.match(pageLines(overflowForm[1].items),/See addendum/);
   assert.match(pageLines(overflowSheet[0].items).replace(/\s+/g,' '),/Final Capstone Project/);
+  const legacy=await prepareForms(profile,{...job,division:undefined,subdivision:undefined,unit:'Water Supply and Sanitation'},{
+    ...circular,pdf:'/circular.pdf'
+  });
+  const legacyForm=await extractPages(await legacy.files[0].blob.arrayBuffer());
+  assert.match(pageLines(legacyForm[0].items),/Unit: Water Supply and Sanitation/);
 });

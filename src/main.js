@@ -1,6 +1,7 @@
 import './style.css';
 import { icon } from './icons.js';
 import { displayDate, expired, retired } from './circular.js';
+import { vacancyUnitLines } from './circular-parser.js';
 import * as fields from './profile.js';
 import { get, put, remove } from './storage.js';
 import {connect,supabase,user,isAdmin,refreshAccount} from './backend.js';
@@ -130,7 +131,9 @@ function renderJobs() {
   if (!list) return;
   const c=state.circular;
   const query=state.query.trim().toLocaleLowerCase();
-  const jobs=c.jobs.filter(j=>(!state.org||j.org===state.org)&&(!state.station||j.station===state.station)&&[j.title,j.org,j.unit,j.station,j.reference,j.grade].some(x=>String(x??'').toLocaleLowerCase().includes(query)));
+  const matchesQuery=value=>String(value??'').toLocaleLowerCase().includes(query);
+  const jobs=c.jobs.filter(j=>(!state.org||j.org===state.org)&&(!state.station||j.station===state.station)&&
+    ([j.title,j.org,j.unit,j.station,j.reference,j.grade].some(matchesQuery)||vacancyUnitLines(j).some(matchesQuery)));
   root.querySelector('#count').textContent=jobs.length+' '+(jobs.length===1?'vacancy':'vacancies');
   list.innerHTML=jobs.length?jobs.map(j=>{
     const done=prepared(j.id);
@@ -143,12 +146,13 @@ function renderJobs() {
         ? action('View forms','view-bundle','file','button job-stage ready',props)+
           (expired(c)?'':action('Regenerate','prepare',null,'button quiet regenerate',props+(state.pending?' disabled':'')))
         : action(stage==='closed'?'Closed':'Prepare forms','prepare','arrow','button job-stage '+stage,props+(stage==='closed'||state.pending?' disabled':''));
+    const units=expanded?vacancyUnitLines(j).map(escape).join('<br>'):'';
     const record=expanded?['requirements','duties','contact','delivery','details'].filter(k=>j[k]).map(k=>'<div><h3>'+({requirements:'Requirements',duties:'Responsibilities',contact:'Enquiries',delivery:'Where to submit',details:'Circular listing'})[k]+'</h3><p>'+escape(j[k])+'</p></div>').join(''):'';
     return '<article class="job"><div class="job-main"><span class="job-icon">'+icon('building',23)+'</span><div class="job-copy"><div class="job-tags"><span class="tag">'+escape(j.grade?'Grade '+j.grade:'Public service')+'</span>'+ (j.reference?'<span class="tag muted">'+escape(j.reference)+'</span>':'')+'</div>'+
       '<h3><button type="button" class="title-link" aria-expanded="'+expanded+'" data-action="details" data-id="'+escape(j.id)+'">'+escape(j.title)+'</button></h3><p class="job-org">'+escape(j.org)+'</p>'+
       '<p class="job-meta">'+(j.station?'<span>'+icon('pin',15)+escape(j.station)+'</span>':'')+'<span>'+icon('clock',15)+(expired(c)?'Closed ':'Closes ')+displayDate(c.closes)+'</span></p></div>'+
       '<div class="job-action">'+preparation+'</div></div>'+
-      (expanded?'<div class="job-detail"><div class="job-extra"><span>'+escape(j.unit)+'</span><strong>'+escape(j.salary)+'</strong></div>'+record+(j.page&&circularLink(c)?'<p class="source"><a href="#circular" data-circular-page="'+Number(j.page)+'">Check the official circular from page '+escape(j.page)+'</a></p>':'')+'</div>':'')+'</article>';
+      (expanded?'<div class="job-detail"><div class="job-extra"><span>'+units+'</span><strong>'+escape(j.salary)+'</strong></div>'+record+(j.page&&circularLink(c)?'<p class="source"><a href="#circular" data-circular-page="'+Number(j.page)+'">Check the official circular from page '+escape(j.page)+'</a></p>':'')+'</div>':'')+'</article>';
   }).join(''):'<div class="empty">'+icon('search',28)+'<h3>'+ (c.archived?'No current circular':'No matching vacancies')+'</h3><p>'+(c.archived?'New vacancies will appear when the next circular is published.':'Try a different search or clear the ministry and duty station filters.')+'</p></div>';
 }
 function input(section,key,label,type,value,disabled=false) {
@@ -355,20 +359,8 @@ async function prepare(jobId) {
     }
     const {prepareForms}=await import('./pdf.js');
     state.jobStatus='filling'; renderJobs();
-    let hierarchy;
-    if(job.page&&job.division===undefined&&job.subdivision===undefined){
-      const source=circularLink(circular);
-      if(source){
-        try{
-          const {readVacancyHierarchy}=await import('./extract.js');
-          hierarchy=await readVacancyHierarchy(source,job);
-        }catch{
-          // Older published vacancies may still have usable unit details.
-        }
-      }
-    }
     if(user?.id!==applicantId)return;
-    const bundle=await prepareForms(profile,{...job,...hierarchy},circular);
+    const bundle=await prepareForms(profile,job,circular);
     if(user?.id!==applicantId) return;
     if (expired(circular)) throw new Error('This vacancy has closed.');
     state.jobStatus='saving';renderJobs();

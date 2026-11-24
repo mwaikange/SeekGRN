@@ -1,10 +1,13 @@
 import {supabase,user,isAdmin,encode,decode} from './backend.js';
+import {withBundledVacancyUnits} from './circular-parser.js';
+import bundledHeadings from './bundled-circular-headings.json';
 export async function get(key) {
  if(key==='circular') {
   const {data,error}=await supabase.from('circulars').select('*').eq('id',1).maybeSingle();
   if(error)throw error;
   if(!data)return {title:'No current circular',jobs:[],closes:'2000-01-01',advertised:'2000-01-01',archived:true};
-  return {...data,pdf:data.pdf==='/circular.pdf'?data.pdf:data.pdf?decode(JSON.parse(data.pdf)):null};
+  if(data.pdf==='/circular.pdf')return withBundledVacancyUnits(data,bundledHeadings);
+  return {...data,pdf:data.pdf?decode(JSON.parse(data.pdf)):null};
  }
  if(!user)return undefined;
  const {data,error}=await supabase.from('applicant_data').select('value').eq('user_id',user.id).eq('key',key).maybeSingle();

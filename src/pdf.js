@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { addressLines, addressSlots, employmentSlots, identityBaseline, identityBoxCenters, qualificationSlots, schoolCertificateLines, schoolLines, tertiaryLines } from './form-layout.js';
+import { vacancyUnitLines } from './circular-parser.js';
 
 function wrap(value, font, size, width) {
  const lines = [];
@@ -94,9 +95,7 @@ export async function prepareForms(profile, job, circular) {
   }
   if(type==='application') {
    twoLines(0,[job.title,job.grade&&'Grade '+job.grade,job.reference&&'Ref. '+job.reference].filter(Boolean).join(' / '),48,576,250);
-   const division=job.division || job.details?.match(/^\s*division\s*:\s*(.+)$/im)?.[1];
-   const subdivision=job.subdivision || job.details?.match(/^\s*sub\s*division\s*:\s*(.+)$/im)?.[1];
-   const unit=[division&&'Division: '+division,subdivision&&'Subdivision: '+subdivision].filter(Boolean).join(' / ') || job.unit;
+   const unit=vacancyUnitLines(job).join(' / ');
    const ministry=fit(job.org,245,1,6);
    if(ministry.lines.length===1){
     drawLines(0,ministry,334,[576.5]);
@@ -105,7 +104,7 @@ export async function prepareForms(profile, job, circular) {
      if(layout.lines.length===1)drawLines(0,layout,334,[565.5]);
      else{
       additional.push(['A2 - Office, ministry, agency or regional council',tidy(job.org)+' / '+tidy(unit)]);
-      drawLines(0,fit('See addendum for division details',245,1),334,[565.5]);
+      drawLines(0,fit('See addendum for organisational details',245,1),334,[565.5]);
      }
     }
    }else{

@@ -20,37 +20,70 @@ export function pageLines(items) {
 
 const tidy=s=>s.replace(/Post s/g,'Posts').replace(/\bW indhoek\b/g,'Windhoek').replace(/\bP osts?\b/g,m=>m.replace(' ','')).replace(/COUNC IL/g,'COUNCIL').replace(/LABOU R/g,'LABOUR').replace(/Gra de/g,'Grade').replace(/A dministrative/g,'Administrative').replace(/P harmacist/g,'Pharmacist').replace(/D istrict/g,'District').replace(/O ffice/g,'Office').replace(/Office r/g,'Officer').trim();
 const fixCase=s=>s===s.toUpperCase()?s.toLowerCase().replace(/(^|[\s/-])([a-z])/g,(_,p,c)=>p+c.toUpperCase()).replace(/\b(Of|The|And|For)\b/g,w=>w.toLowerCase()):s;
+const unitLabels={department:'Department',directorate:'Directorate',division:'Division',subdivision:'Subdivision',section:'Section'};
+const unitKeys=Object.keys(unitLabels);
+const headingKey=value=>value.replace(/[\s-]/g,'').toLowerCase();
+
+function readUnitHeadings(line) {
+ if(!Object.hasOwn(unitLabels,headingKey(line.split(':',1)[0])))return [];
+ const matches=[...line.matchAll(/(?:^|\s*[:/|]\s*|\s+)(department|directorate|division|sub[\s-]*division|section)\s*:\s*/gi)];
+ return matches.map((match,index)=>[
+  headingKey(match[1]),
+  line.slice(match.index+match[0].length,matches[index+1]?.index).trim()
+ ]);
+}
+
+export function vacancyUnitLines(job) {
+ const unit=typeof job.unit==='string'?job.unit.trim():'';
+ const details=typeof job.details==='string'?job.details.split(/\r?\n/):[];
+ const recorded=Object.fromEntries([...details,unit].flatMap(readUnitHeadings));
+ const lines=[];
+ for(const key of unitKeys){
+  const name=String(job[key]||recorded[key]||'').trim();
+  if(name)lines.push(unitLabels[key]+': '+name);
+ }
+ return lines.length?lines:unit?['Unit: '+unit]:[];
+}
+
+export function withBundledVacancyUnits(circular, index) {
+ if(circular.pdf!=='/circular.pdf'||circular.title!==index.title||
+    circular.advertised!==index.advertised||circular.closes!==index.closes)return circular;
+ const jobs=circular.jobs.map(job=>{
+  const entry=index.jobs[job.id];
+  if(!entry||entry.title!==job.title||entry.org!==job.org||entry.station!==job.station)return job;
+  const {title,org,station,...headings}=entry;
+  return {...headings,...job};
+ });
+ return {...circular,jobs};
+}
+
 export function parseCircular(pages) {
  const intro=pages.slice(0,4).join(' ').replace(/\s+/g,' ');
  const issue=intro.match(/PSM\s+CIRCULAR\s+NO\.?\s*([IVXLCDM]+|\d+)\s+OF\s+(\d{4})/i);
  const advertised=isoDate(intro.match(/advertised\s+on\s*:?\s*(\d{1,2}\s+[a-z]+\s+\d{4})/i)?.[1]||'');
  const closes=isoDate(intro.match(/closing\s+date\s*:?\s*(\d{1,2}\s+[a-z]+\s+\d{4})/i)?.[1]||'');
- const jobs=[];let org='',unit='',division='',subdivision='',current=null;
+ const jobs=[];let org='',unit='',units={},current=null;
  const lines=pages.flatMap((page,i)=>cleanLines(page).map(text=>({text:tidy(text),page:i+1})));
  for(let i=0;i<lines.length;i++){
   const {text:line,page}=lines[i];const compact=line.replace(/\s/g,'').toUpperCase();
   if(line===line.toUpperCase()&&/^(OFFICE OF |MINISTRY OF |NATIONAL ASSEMBLY|NATIONAL COUNCIL)/.test(line)||/^[A-Z -]+REGIONALCOUNCIL$/.test(compact)){
-   org=fixCase(line);unit='';division='';subdivision='';current=null;continue;
+   org=fixCase(line);unit='';units={};current=null;continue;
   }
-  const heading=line.split(':')[0].replace(/[\s-]/g,'').toLowerCase();
-  if(line.includes(':')&&['department','directorate','division','subdivision','section'].includes(heading)){
-   unit=line.slice(line.indexOf(':')+1).trim();
-   if(['department','directorate','division'].includes(heading)){
-    division=heading==='division'?unit:'';
-    subdivision='';
-    if(division){
-     const combined=division.match(/^(.*?)(?:\s*[:/|]\s*|\s+)sub[\s-]*division\s*:\s*(.+)$/i);
-     if(combined){division=combined[1].trim();subdivision=combined[2].trim();}
-    }
+  const heading=headingKey(line.split(':',1)[0]);
+  const headings=readUnitHeadings(line);
+  if(headings.length){
+   for(const [key,name] of headings){
+    for(const child of unitKeys.slice(unitKeys.indexOf(key)+1))delete units[child];
+    units[key]=name;
+    unit=name;
    }
-   if(heading==='subdivision')subdivision=unit;
    continue;
   }
   if(['postdesignation','posttitle','position'].includes(heading)&&line.includes(':')){
    let label=line.slice(line.indexOf(':')+1).trim();
    while((label.match(/\(/g)||[]).length>(label.match(/\)/g)||[]).length&&i+1<lines.length&&!/:|salary|minimum|^\d+\s*x/i.test(lines[i+1].text))label+=' '+lines[++i].text;
    const match=label.match(/^(.*?)\s+Grade\s+(\d+[A-Z]?)(.*)$/i);
-   current={id:'psm-'+(closes||'pending')+'-'+(jobs.length+1),title:fixCase(match?match[1]+match[3]:label),grade:match?.[2]||'',org,unit,division,subdivision,station:'',page,details:''};
+   current={id:'psm-'+(closes||'pending')+'-'+(jobs.length+1),title:fixCase(match?match[1]+match[3]:label),grade:match?.[2]||'',org,unit,division:'',subdivision:'',...units,station:'',page,details:''};
    jobs.push(current);continue;
   }
   if(!current)continue;
