@@ -332,3 +332,10 @@ html{scroll-padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
 .document-preview::backdrop { background: #12241fc2; }
 .document-preview h2 { margin: 0 0 .75rem; }
 .document-preview form { margin-bottom: .75rem; }
+
+.footer-stats{display:flex;justify-content:center;align-items:center;gap:28px;margin-top:5px;color:#172a22;font-size:15px;line-height:1.2;font-weight:700;font-variant-numeric:tabular-nums}
+.footer-stat{display:inline-flex;align-items:center;gap:8px}
+.footer-stat-dot{display:inline-block;flex:none;width:11px;height:11px;border-radius:50%}
+.footer-stat-dot.accounts{background:#138d6e}
+.footer-stat-dot.subscriptions{background:#2563eb}
+@media(max-width:480px){.footer-stats{gap:20px;font-size:14px}}
