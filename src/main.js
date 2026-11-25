@@ -34,7 +34,7 @@ const nav = [['browse','grid','Browse'],['profile','user','Profile'],['documents
 const state = {
   view: 'browse', section: 'personal', profile: {...blank,...await get('profile')},
   documents: await get('documents') ?? [], circular: await get('circular'),
-  admin: isAdmin, query: '', org: '', station: '', selected: '', notice: '', noticeKind: '', jobStatus: '', pending: null
+  admin: isAdmin, query: '', org: '', station: '', selected: '', notice: '', noticeKind: '', jobStatus: '', pending: null, footerStats: null
 };
 let cachedPdf, cachedPdfUrl, closeViewer, closeSubscription;
 let savingProfile=false, profileRevision=0;
@@ -103,7 +103,7 @@ function shell(content) {
     (user&&!registrationPending()?'<nav class="app-nav" aria-label="Main navigation">'+nav.map(navLink).join('')+(state.admin?navLink(['admin','shield','Admin']):navLink(['subscription','subscription','Subscription']))+'</nav>':'')+
     action(user?'My account':'Sign in','account','user','button quiet mast-action')+'</div></header>'+
     '<main id="main">'+content+'<p id="notice" role="status" class="notice wrap" data-kind="'+escape(state.noticeKind)+'" '+(state.notice?'':'hidden')+'>'+escape(state.notice)+'</p></main>'+
-    '<footer class="wrap footer"><div><a class="footer-brand" href="#browse">SeekGRNJobs</a><p>Independent application preparation tool for Namibia’s Public Service.</p><div class="footer-details"><nav class="footer-legal" aria-label="Legal"><a href="#terms">Terms of Service</a><span aria-hidden="true">|</span><a href="#privacy">Privacy Policy</a><span aria-hidden="true">|</span><a href="/request-account-removal">Account Removal</a></nav><p><a href="mailto:support@paysme.site">support@paysme.site</a> · <a href="tel:+264836795150">+264 83 679 5150</a></p><p class="footer-owner">Owned &amp; Managed by Mwai PaySME Solutions cc</p></div></div></footer>';
+    '<footer class="wrap footer"><div><a class="footer-brand" href="#browse">SeekGRNJobs</a><p>Independent application preparation tool for Namibia’s Public Service.</p><div class="footer-details"><nav class="footer-legal" aria-label="Legal"><a href="#terms">Terms of Service</a><span aria-hidden="true">|</span><a href="#privacy">Privacy Policy</a><span aria-hidden="true">|</span><a href="/request-account-removal">Account Removal</a></nav><p><a href="mailto:support@paysme.site">support@paysme.site</a> · <a href="tel:+264836795150">+264 83 679 5150</a></p><p class="footer-owner">Owned &amp; Managed by Mwai PaySME Solutions cc</p><div class="footer-stats" aria-label="Service statistics" '+(state.footerStats?'':'hidden')+'><span class="footer-stat" aria-label="Active accounts"><i class="footer-stat-dot accounts" aria-hidden="true"></i><span data-footer-stat="accounts">'+(state.footerStats?new Intl.NumberFormat().format(state.footerStats.accounts):'')+'</span></span><span class="footer-stat" aria-label="Active paid subscriptions"><i class="footer-stat-dot subscriptions" aria-hidden="true"></i><span data-footer-stat="subscriptions">'+(state.footerStats?new Intl.NumberFormat().format(state.footerStats.subscriptions):'')+'</span></span></div></div></div></footer>';
 }
 function sectionHeading(label, title, subtitle) {
   return '<div class="page-head"><span class="eyebrow">'+escape(label)+'</span><h1>'+escape(title)+'</h1><p>'+escape(subtitle)+'</p></div>';
@@ -281,6 +281,20 @@ function render() {
       closeViewer=await mountCircular(container,circularLink(state.circular),state.circularPage||1);
     }).catch(error=>status(error.message));
   }
+}
+async function loadFooterStats() {
+  try {
+    const response=await fetch('/api/public-stats',{headers:{Accept:'application/json'}});
+    if(!response.ok)return;
+    const stats=await response.json();
+    if(!Number.isSafeInteger(stats.activeAccounts)||!Number.isSafeInteger(stats.activeSubscriptions))return;
+    state.footerStats={accounts:stats.activeAccounts,subscriptions:stats.activeSubscriptions};
+    const footer=root.querySelector('.footer-stats');
+    if(!footer)return;
+    footer.querySelector('[data-footer-stat="accounts"]').textContent=new Intl.NumberFormat().format(state.footerStats.accounts);
+    footer.querySelector('[data-footer-stat="subscriptions"]').textContent=new Intl.NumberFormat().format(state.footerStats.subscriptions);
+    footer.hidden=false;
+  } catch {}
 }
 function navigate() {
   if(location.hash==='#main') return;
@@ -547,6 +561,7 @@ setInterval(()=>{
   if(closed!==previouslyExpired||wasArchived!==state.circular.archived){previouslyExpired=closed;if(state.view==='browse')render();}
 },10000);
 navigate();
+void loadFooterStats();
 if(recovering) openAccount(reloadAccount,'password');
 else if(registrationPending())openAccount(reloadAccount,'contacts',resumeAction);
 else if(user)void resumeAction();
