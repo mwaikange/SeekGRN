@@ -339,3 +339,6 @@ html{scroll-padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
 .footer-stat-dot.accounts{background:#138d6e}
 .footer-stat-dot.subscriptions{background:#2563eb}
 @media(max-width:480px){.footer-stats{gap:20px;font-size:14px}}
+
+.footer-disclaimer{margin:8px 0 0;color:#b42318;font-size:11px;line-height:1.4;text-align:center}
+@media(max-width:480px){.footer-disclaimer{font-size:10px}}
